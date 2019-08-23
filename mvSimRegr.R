@@ -1,5 +1,12 @@
 #!/usr/bin/env Rscript
 
+tryCatch(setwd("~/multivar-sims"),
+				 error=function(e) {
+								 tryCatch( setwd("~/WORK/Q5/masters-thesis/code/multivar-sims"))
+				 }
+)
+
+
 ############################ packages and functions ############################
 library(mAr)
 library(multitaper)
@@ -39,13 +46,13 @@ NUM_REGR <- 100
 
 # parameters for bivariate AR(1)
 varZ <- 0.01 # variance of innovations
-phiMat.r <- matrix(c(0.4,0,0,0.3), nrow=2, ncol=2, byrow=TRUE)
+phiMat.r <- matrix(c(0.4,-0.6,-0.6,0.4), nrow=2, ncol=2, byrow=TRUE)
 errCovMat.r <- diag(varZ,2,2)
 phiMat.p <- matrix(c(0.4,0,0,0.3), nrow=2, ncol=2, byrow=TRUE)
 errCovMat.p <- diag(varZ,2,2)
 
 betasOverN <- list() # list of data.frames for the \hat{beta}s
-betas.head <- c("b1","b2","ccv.bart","ccv.theo","ccv.mtap") # headings for betas
+betas.head <- c("b1","b2","cv.bart","cv.theo","cv.mtap") # headings for betas
 
 
 ############################# do main computations #############################
@@ -175,8 +182,8 @@ for (n in seq(1,length(numObsVec))) {
   }
   cat(paste0("########   end : ",Sys.time()),"\n")
   
-  betas$se.bart <- (betas$ccv.theo-betas$ccv.bart)**2
-  betas$se.mtap <- (betas$ccv.theo-betas$ccv.mtap)**2
+  betas$se.bart <- (betas$cv.theo-betas$cv.bart)**2
+  betas$se.mtap <- (betas$cv.theo-betas$cv.mtap)**2
   
   betasOverN[[n]] <- betas # update the list of dfs
 } # end for loop over n in numObsVec
@@ -187,11 +194,11 @@ for (n in seq(1,length(numObsVec))) {
 # produce result df with MSEs, etc.
 result <- data.frame(N=numObsVec)
 for (k in seq(1,length(betasOverN))) {
-  # betasOverN[[k]][,"mse.bart"] <- ( betasOverN[[k]][,"ccv.theo"] - betasOverN[[k]][,"ccv.bart"] )**2
-  # betasOverN[[k]][,"mse.mtap"] <- ( betasOverN[[k]][,"ccv.theo"] - betasOverN[[k]][,"ccv.mtap"] )**2
+  # betasOverN[[k]][,"mse.bart"] <- ( betasOverN[[k]][,"cv.theo"] - betasOverN[[k]][,"cv.bart"] )**2
+  # betasOverN[[k]][,"mse.mtap"] <- ( betasOverN[[k]][,"cv.theo"] - betasOverN[[k]][,"cv.mtap"] )**2
   dfObj <- betasOverN[[k]]
   result[k,c("mse.bart","mse.mtap")] <- apply(X=dfObj[,c("se.bart","se.mtap")],MARGIN=2,FUN=mean)
-  result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("ccv.bart","ccv.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
+  result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("cv.bart","cv.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
   result[k,c("sqbias.bart","sqbias.mtap")] <- result[k,c("mse.bart","mse.mtap")]-result[k,c("var.bart","var.mtap")]
   
   qSE <- apply(X=dfObj[,c("se.bart","se.mtap")], MARGIN=2, FUN=quantile, c(0.98,0.02)) # quantiles for approximate CIs

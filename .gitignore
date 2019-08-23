@@ -1,3 +1,7 @@
+# vim files
+*.*~
+
+################################### R files ####################################
 # History files
 .Rhistory
 .Rapp.history
