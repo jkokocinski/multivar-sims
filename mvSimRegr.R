@@ -7,6 +7,7 @@ tryCatch(setwd("~/multivar-sims"),
 )
 
 source("helpers_mvSimRegr.R") # import helper functions
+# 2354
 
 ################################## set params ##################################
 # parameters for bivariate AR(1)
