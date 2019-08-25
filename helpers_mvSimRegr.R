@@ -178,7 +178,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     # \cov{Y_1,Y_2} from -maxlag to +maxlag
     maxlag=numObs-1
     CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
-    theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2] 
+    theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2]
     # theo.ccv.r[which(theo.ccv.r<1e-18)] <- 0 # truncate at 1e-18
     # theo.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
     # theo.ccv.r.mat <- matrix(theo.ccv.r[numObs +
@@ -254,9 +254,11 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
       #   t(MASS::ginv(as.matrix(bivAR1.p[,2])))
       # 
       # compute the cross spectrum of (Y_1,Y_2)
-      Y1mtx <- matrix(c(bivAR1.r[,1], rep(0,M-numObs)), nrow=M, ncol=K)
+      Y1mtx <- matrix(c((bivAR1.r[,1]-mean(bivAR1.r[,1])), rep(0,M-numObs)),
+                      nrow=M, ncol=K)
       Y1mtx <- mvfft(z=Y1mtx*sleps$v)
-      Y2mtx <- matrix(c(bivAR1.r[,2], rep(0,M-numObs)), nrow=M, ncol=K)
+      Y2mtx <- matrix(c((bivAR1.r[,2]-mean(bivAR1.r[,2])), rep(0,M-numObs)),
+                      nrow=M, ncol=K)
       Y2mtx <- mvfft(z=Y2mtx*sleps$v)
       crossSpecEstY <- (Y1mtx * Conj(Y2mtx)) %*% rep(1,K)/K
       mtap.ccv.r <- fft(z=crossSpecEstY, inverse=TRUE) / numObs

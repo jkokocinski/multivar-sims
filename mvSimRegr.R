@@ -11,15 +11,17 @@ source("helpers_mvSimRegr.R") # import helper functions
 ################################## set params ##################################
 # parameters for bivariate AR(1)
 phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
-phiMat.p <- matrix(c(0.4,0,0,0.3), nrow=2, ncol=2, byrow=TRUE)
+phiMat.p <- matrix(c(0.7,-0.5,1,0.3), nrow=2, ncol=2, byrow=TRUE)
 
 X <- ar1.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r, varZ=1,
-                  numObsVec=seq(1,5,1) * 1e2,
-                  NUM_REGR=100,
+                  numObsVec=seq(1,17,4) * 1e2,
+                  NUM_REGR=50,
                   mtmFixed="NW", timeBandProd=6, numTapers=11,
                   writeImgFile=FALSE, embedSines=FALSE)
 
-
+mean(X$betasOverN[[4]]$b1)
+mean(X$betasOverN[[4]]$b2)
+head(X$betasOverN[[4]])
 
 
 # # variance plot
