@@ -185,7 +185,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     #                          row(theo.ccv.r.mat)-col(theo.ccv.r.mat)],numObs,numObs)
     
     # compute the Slepians
-    M <- 3*2^(trunc(log2(numObs))+1)
+    M <- 6*2^(trunc(log2(numObs))+1)
     if (mtmFixed=="NW") {
       sleps <- multitaper::dpss(M, k=numTapers, nw=timeBandProd) # fixed NW
     } else if (mtmFixed=="W") {
@@ -335,7 +335,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
     pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=6, height=6)
   }
-  layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
+  # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
   par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
   plot(x=result$N-5, y=result$mse.bart, xlab="Realization Size", ylab="MSE",
        log="y", ylim=MSE.plotLims*c(1e-1,1e1), col="goldenrod", pch=16)
@@ -354,17 +354,17 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
   text(x=max(numObsVec), y=MSE.plotLims[1]*0.1, adj=c(1,0), family="mono",
        labels="[ mtm rel. efficiency ]", col="blue")
   
-  par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-  plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
-       ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
-  arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.bart,
-         length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-  arrows(x0=result$N-5, y0=result$var.bart/result$mse.bart, x1=result$N-5, y1=1,
-         length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
-  arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.mtap,
-         length=0.05, angle=90, code=3, lwd=2, col="blue")
-  arrows(x0=result$N+5, y0=result$var.mtap/result$mse.mtap, x1=result$N+5, y1=1,
-         length=0.05, angle=90, code=3, lwd=2, col="darkblue")
+  # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+  # plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
+  #      ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
+  # arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.bart,
+  #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
+  # arrows(x0=result$N-5, y0=result$var.bart/result$mse.bart, x1=result$N-5, y1=1,
+  #        length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
+  # arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.mtap,
+  #        length=0.05, angle=90, code=3, lwd=2, col="blue")
+  # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.mtap, x1=result$N+5, y1=1,
+  #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
   if (writeImgFile) { dev.off() }
   
   
