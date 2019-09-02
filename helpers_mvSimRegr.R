@@ -91,7 +91,7 @@ toepLeftMult2 <- function(toepVec,rightVec) {
   resVec <- resVec[seq(N,2*N-1)]
   return(resVec)
 }
-# toepLeftMult2
+# end toepLeftMult2
 
 
 ################################## bivAR1.ccvf #################################
@@ -117,6 +117,30 @@ bivAR1.ccvf <- function(coefMat, V=diag(1,2), maxlag=1) {
   }
   return(CCVmats)
 }
+
+
+################################# bivAR1.ccvf.D ################################
+#
+# bivAR1.ccvf.D : Compute the CCVF for a bivariate AR(1) process, given the
+#   coefficient matrix of the dependent AR(1) process, the diagonal matrix
+#   coefficient, and the variance of the innovations.
+# 
+#     cov(y(t+h),y(t)) = D cov(x(t+h),x(t)) D^T + diag(V)
+#
+bivAR1.ccvf.D <- function(ccvfMats, D, V) {
+  stopifnot(dim(ccvfMats)[1]==2)
+  
+  CCVmats.D <- D %*% ccvfMats
+  startColInds <- seq(1,dim(CCVmats.D)[2]-1,2)
+  for (j in startColInds) {
+    CCVmats.D[,((0:1)+j)] <- CCVmats.D[,((0:1)+j)] %*% D +
+      as.numeric(2*j==dim(CCVmats.D)[2]) * V    # note that t(D)==D
+  }
+  
+  return(CCVmats.D)
+}
+# end bivAR1.ccvf.D
+
 
 
 ################################# ar1.regr.cov #################################
@@ -157,7 +181,7 @@ bivAR1.ccvf <- function(coefMat, V=diag(1,2), maxlag=1) {
 ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
                          mtmFixed="NW", timeBandProd=4, numTapers=7, W,
                          writeImgFile=FALSE, embedSines=FALSE) {
-  library(mAr)
+  library(mAr) # depends on MASS
   library(multitaper)
   
   if (mtmFixed=="W" & missing(W)) {
@@ -177,7 +201,10 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     
     # \cov{Y_1,Y_2} from -maxlag to +maxlag
     maxlag=numObs-1
-    CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
+    # comment/leave in below as -++ to make resp series 
+    # CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
+    Dcoef <- diag(c(10,15)) # diag matrix to multiply pred rlzn by to get resp rlzn
+    CCVmats <- bivAR1.ccvf.D(ccvfMats=bivAR1.ccvf(coefMat=phiMat.p, V=errCovMat.p, maxlag=maxlag),D=Dcoef,V=errCovMat.r)
     theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2]
     # theo.ccv.r[which(theo.ccv.r<1e-18)] <- 0 # truncate at 1e-18
     # theo.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
@@ -185,7 +212,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     #                          row(theo.ccv.r.mat)-col(theo.ccv.r.mat)],numObs,numObs)
     
     # compute the Slepians
-    M <- 6*2^(trunc(log2(numObs))+1)
+    M <- 3*2^(trunc(log2(numObs))+1)
     if (mtmFixed=="NW") {
       sleps <- multitaper::dpss(M, k=numTapers, nw=timeBandProd) # fixed NW
     } else if (mtmFixed=="W") {
@@ -212,7 +239,8 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
       
     cat(paste0("######## start : ",Sys.time()),"\n")
     for (j in 1:NUM_REGR) {
-      bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
+      # bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
+      bivAR1.r <- as.matrix(bivAR1.p) %*% t(Dcoef) + MASS::mvrnorm(n=numObs, mu=rep(0,2), Sigma=errCovMat.r)
       
       if (embedSines) {
         # embed the sinusoids

@@ -14,8 +14,8 @@ phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
 phiMat.p <- matrix(c(0.7,-0.5,1,0.3), nrow=2, ncol=2, byrow=TRUE)
 
 X <- ar1.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r, varZ=1,
-                  numObsVec=seq(1,17,4) * 1e2,
-                  NUM_REGR=50,
+                  numObsVec=seq(1,10,1) * 1e2,
+                  NUM_REGR=1000,
                   mtmFixed="NW", timeBandProd=6, numTapers=11,
                   writeImgFile=FALSE, embedSines=FALSE)
 
