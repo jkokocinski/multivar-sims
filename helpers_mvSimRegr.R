@@ -125,7 +125,16 @@ bivAR1.ccvf <- function(coefMat, V=diag(1,2), maxlag=1) {
 #   coefficient matrix of the dependent AR(1) process, the diagonal matrix
 #   coefficient, and the variance of the innovations.
 # 
-#     cov(y(t+h),y(t)) = D cov(x(t+h),x(t)) D^T + diag(V)
+#              cov(y(t+h),y(t)) = D cov(x(t+h),x(t)) D^T + diag(V)
+#
+#     * `ccvfMats` is a matrix of submatrices (each 2×2), that are
+#       autocovariance matrices at lags -h to h. This is the output from the
+#       bivAR1.ccvf function, defined above.
+#     * `D` is a diagonal matrix which left multiplies the input process to get
+#       the output process, not including added noise (see `V`).
+#     * `V` is a 2×2 covariance matrix for the bivariate noise which is added to
+#       the result of left-multiplying the input by `D`, thus giving the final
+#       output process.
 #
 bivAR1.ccvf.D <- function(ccvfMats, D, V) {
   stopifnot(dim(ccvfMats)[1]==2)
