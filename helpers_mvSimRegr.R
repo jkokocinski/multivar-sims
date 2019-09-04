@@ -71,8 +71,10 @@ toepLeftMult <- function(toepVec,rightVec) {
 #   multiplication by doing a multiplication in the frequency domain, instead of
 #   convolving in the time domain, as in toepLeftMult.
 #
-#     * `toepVec` should be such that the first N entries of rev(toepVec)
-#       correspond to the last row of the Toeplitz matrix
+#     * `toepVec` should be such that the order of the vector entries
+#       corresponds to traversing down the last column of the Toeplitz matrix,
+#       and then traversing down the first column of the Toeplitz matrix, but
+#       excluding the duplicated "lag-0" entry.
 #       (If passing an ACVF vector, just use the regular ACVF vector with lags
 #       going from negative to positive).
 #
@@ -163,8 +165,8 @@ bivAR1.ccvf.D <- function(ccvfMats, D, V) {
 #
 #     * `phiMat.p` and `phiMat.r` are, respectively, the predictor and response
 #       matrix coefficients for bivariate AR(1) realizations.
-#     * `varZ` is the variance of the innovations for both the response and
-#       predictor series. Default is 1.
+#     * `errCovMat.r` is the var-cov matrix for the response innovations.
+#     * `errCovMat.p` is the var-cov matrix for the predictor innovations.
 #     * `numObsVec` is a numeric vector containing each realization size to be
 #       used.
 #     * `NUM_REGR` is the number of regressions to be performed per realization
@@ -180,14 +182,12 @@ bivAR1.ccvf.D <- function(ccvfMats, D, V) {
 #     * `writeImgFile` : should image file(s) be written?
 #     * `embedSines` : should sinusoids be embedded in AR processes?
 #
-# The innovations covariance matrices are both the 2-by-2 identity matrix scaled
-#   by `varZ`.
-#
 # Return value is a list containing the list of regression coefficients and
 #   their estimated covariances (for each realization size), as well as the
 #   estimated MSEs of the regression coefficients in a data frame.
 #
-ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
+ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
+                         numObsVec, NUM_REGR,
                          mtmFixed="NW", timeBandProd=4, numTapers=7, W,
                          writeImgFile=FALSE, embedSines=FALSE) {
   library(mAr) # depends on MASS
@@ -198,22 +198,20 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     stop("W set to fixed, but value not specified.")
   }
   
-  errCovMat.r <- errCovMat.p <- diag(varZ,2,2)
-  
   betasOverN <- list() # list of data.frames for the \hat{beta}s
   betas.head <- c("b1","b2","cv.bart","cv.theo","cv.mtap") # headings for betas
-  
   
   ############################# do main computations #############################
   for (n in seq(1,length(numObsVec))) {
     numObs <- numObsVec[n]
+    cat(paste0("################ N=",numObs,"\n"))
     
     # \cov{Y_1,Y_2} from -maxlag to +maxlag
     maxlag=numObs-1
     # comment/leave in below as -++ to make resp series 
-    # CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
-    Dcoef <- diag(c(10,15)) # diag matrix to multiply pred rlzn by to get resp rlzn
-    CCVmats <- bivAR1.ccvf.D(ccvfMats=bivAR1.ccvf(coefMat=phiMat.p, V=errCovMat.p, maxlag=maxlag),D=Dcoef,V=errCovMat.r)
+    CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
+    # Dcoef <- diag(c(10,15)) # diag matrix to multiply pred rlzn by to get resp rlzn
+    # CCVmats <- bivAR1.ccvf.D(ccvfMats=bivAR1.ccvf(coefMat=phiMat.p, V=errCovMat.p, maxlag=maxlag),D=Dcoef,V=errCovMat.r)
     theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2]
     # theo.ccv.r[which(theo.ccv.r<1e-18)] <- 0 # truncate at 1e-18
     # theo.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
@@ -240,16 +238,17 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
     if (embedSines) {
       # generate sinusoids
       sines <- matrix(nrow=numObs, ncol=2)
-      sines[,1] <- 10 * varZ * sin(2*pi/30*(1:numObs))
-      sines[,2] <- 10 * varZ * sin(2*pi/20*(1:numObs))
+      sines[,1] <- sin(2*pi/30*(1:numObs))
+      sines[,2] <- sin(2*pi/20*(1:numObs))
+      sines <- 10 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
     }
     
     bivAR1.p <- mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs)
       
     cat(paste0("######## start : ",Sys.time()),"\n")
     for (j in 1:NUM_REGR) {
-      # bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
-      bivAR1.r <- as.matrix(bivAR1.p) %*% t(Dcoef) + MASS::mvrnorm(n=numObs, mu=rep(0,2), Sigma=errCovMat.r)
+      bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
+      # bivAR1.r <- as.matrix(bivAR1.p) %*% t(Dcoef) + MASS::mvrnorm(n=numObs, mu=rep(0,2), Sigma=errCovMat.r)
       
       if (embedSines) {
         # embed the sinusoids
@@ -267,6 +266,13 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
       # Bartlett CCVF of response series
       bart.ccv.r <- ccf(x=bivAR1.r[,1], y=bivAR1.r[,2], type="covariance",
                         lag.max=numObs-1, plot=FALSE)
+      # Bartlett ACVFs for responses; for use in calculating corr
+      bart.acv1.r <- acf(x=bivAR1.r[,1], type="covariance", lag.max=numObs-1,
+                         plot=FALSE)
+      bart.acv2.r <- acf(x=bivAR1.r[,2], type="covariance", lag.max=numObs-1,
+                         plot=FALSE)
+      bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
+      bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
       # bart.ccv.r$acf[which(bart.ccv.r$acf<1e-18)] <- 0 # truncate at 1e-18
       # put them into a matrix (has a Toeplitz form)
       # bart.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
@@ -279,6 +285,15 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
         toepLeftMult2( as.vector(bart.ccv.r$acf),
                       as.vector(t(MASS::ginv(as.matrix(bivAR1.p[,2]))))
       )
+      var.b1.bart <- MASS::ginv(as.matrix(bivAR1.p[,1])) %*%
+        toepLeftMult2( bart.acv1.r,
+                      as.vector(t(MASS::ginv(as.matrix(bivAR1.p[,1]))))
+      )
+      var.b2.bart <- MASS::ginv(as.matrix(bivAR1.p[,2])) %*%
+        toepLeftMult2( bart.acv2.r,
+                      as.vector(t(MASS::ginv(as.matrix(bivAR1.p[,2]))))
+      )
+      corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
       # covB.bart <- MASS::ginv(as.matrix(bivAR1.p[,1])) %*% bart.ccv.r.mat %*%
       #   t(MASS::ginv(as.matrix(bivAR1.p[,2])))
       
@@ -319,7 +334,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, varZ=1, numObsVec, NUM_REGR,
       # update the betas data.frame
       betas[j,] <- c(as.numeric(model1$coefficients),
                      as.numeric(model2$coefficients),
-                     covB.bart, covB.theo, covB.mtap)
+                     covB.bart, covB.theo, covB.mtap, corB.bart)
       # betas.s[j,] <- c(as.numeric(model1.s$coefficients),
       #                  as.numeric(model2.s$coefficients),
       #                  covB.bart.s, covB.theo.s)
