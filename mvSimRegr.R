@@ -11,13 +11,13 @@ source("helpers_mvSimRegr.R") # import helper functions
 ################################## set params ##################################
 # parameters for bivariate AR(1)
 phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
-phiMat.p <- matrix(c(0.7,-0.5,1,0.3), nrow=2, ncol=2, byrow=TRUE)
+phiMat.p <- matrix(c(0.7,-0.5,0.9,-0.3), nrow=2, ncol=2, byrow=TRUE)
 errCovMat.r <- diag(1,2)
 errCovMat.p <- diag(1,2)
 
 X <- ar1.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                   errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                  numObsVec=seq(1,10,1) * 1e2,
+                  numObsVec=seq(1,5,1) * 1e2,
                   NUM_REGR=100,
                   mtmFixed="NW", timeBandProd=6, numTapers=11,
                   writeImgFile=FALSE, embedSines=FALSE)
