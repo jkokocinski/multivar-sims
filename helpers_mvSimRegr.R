@@ -189,20 +189,36 @@ bivAR1.ccvf.D <- function(ccvfMats, D, V) {
 ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                          numObsVec, NUM_REGR,
                          mtmFixed="NW", timeBandProd=4, numTapers=7, W,
-                         writeImgFile=FALSE, embedSines=FALSE) {
-  library(mAr) # depends on MASS
-  library(multitaper)
+                         writeImgFile=FALSE, embedSines=TRUE,
+                         linDepY=FALSE, computeCorr=FALSE) {
   
-  if (mtmFixed=="W" & missing(W)) {
-    # if just W is fixed
-    stop("W set to fixed, but value not specified.")
+  if(length(intersect(c("mAr", "multitaper"), rownames(installed.packages())))<2) {
+    stop("Ensure `mAr` and `multitaper` packages are loaded.")
   }
+  
+  if (mtmFixed=="W") {
+    # if just W is fixed
+    if (missing(W)) {
+      stop("W set to fixed, but value not specified.")
+    }
+    if (!missing(timeBandProd)) {
+      cat("W fixed; timeBandProd not used.\n")
+    }
+    if (!missing(numTapers)) {
+      cat("W fixed; numTapers not used.\n")
+    }
+  }
+  if (linDepY) {
+    cat("Responses 'linearly dependent' by design; \`phiMat.r\` not used.\n")
+}
   
   betasOverN <- list() # list of data.frames for the \hat{beta}s
   
   # headings for betas
-  betas.head <- c("b1","b2","cv.bart","cv.theo","cv.mtap", "cor.bart",
-                  "cor.theo", "cor.mtap")
+  betas.head <- c("b1","b2","cv.bart","cv.theo","cv.mtap")
+  if (computeCorr) {
+    betas.head <- c(betas.head, c("cor.bart","cor.theo","cor.mtap"))
+  }
   
   ############################# do main computations #############################
   for (n in seq(1,length(numObsVec))) {
@@ -211,13 +227,23 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     # \cov{Y_1,Y_2} from -maxlag to +maxlag
     maxlag=numObs-1
-    # comment/leave in below as -++ to make resp series 
-    CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
-    # Dcoef <- diag(c(10,15)) # diag matrix to multiply pred rlzn by to get resp rlzn
-    # CCVmats <- bivAR1.ccvf.D(ccvfMats=bivAR1.ccvf(coefMat=phiMat.p, V=errCovMat.p, maxlag=maxlag),D=Dcoef,V=errCovMat.r)
-    theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2]
-    theo.acv1.r <- CCVmats[1,2*seq(0,2*maxlag)+1]
-    theo.acv2.r <- CCVmats[2,2*seq(0,2*maxlag)+2]
+    if (linDepY) {
+      phi <- 0.4 # AR coef for Y_1
+      a <- 1 # scale on Y_2
+      varZ.Y1 <- 0.2
+      addedNoiseVar.Y2 <- 0.05
+      theo.acv1.r <- phi^(abs(seq(-maxlag, maxlag))) * varZ.Y1 / (1-phi^2)
+      theo.acv2.r <- a^2 * theo.acv1.r + ((-maxlag:maxlag)==0) * addedNoiseVar.Y2
+      theo.ccv.r <- a * theo.acv1.r
+    } else {
+      # comment/leave in below as -++ to make resp series lin. dep. on pred series
+      CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
+      # Dcoef <- diag(c(10,15)) # diag matrix to multiply pred rlzn by to get resp rlzn
+      # CCVmats <- bivAR1.ccvf.D(ccvfMats=bivAR1.ccvf(coefMat=phiMat.p, V=errCovMat.p, maxlag=maxlag),D=Dcoef,V=errCovMat.r)
+      theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2]
+      theo.acv1.r <- CCVmats[1,2*seq(0,2*maxlag)+1]
+      theo.acv2.r <- CCVmats[2,2*seq(0,2*maxlag)+2]
+    }
     
     # theo.ccv.r[which(theo.ccv.r<1e-18)] <- 0 # truncate at 1e-18
     # theo.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
@@ -253,8 +279,13 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       
     cat(paste0("######## start : ",Sys.time()),"\n")
     for (j in 1:NUM_REGR) {
-      bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
-      # bivAR1.r <- as.matrix(bivAR1.p) %*% t(Dcoef) + MASS::mvrnorm(n=numObs, mu=rep(0,2), Sigma=errCovMat.r)
+      if (linDepY) {
+        y1 <- as.numeric(arima.sim(model=list(ar=phi), n=numObs, innov=rnorm(numObs, 0, sd=sqrt(varZ.Y1))))
+        bivAR1.r <- data.frame( X1=y1, X2=a*y1 + rnorm(numObs, 0, sd=sqrt(addedNoiseVar.Y2)) )
+      } else {
+        bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
+        # bivAR1.r <- as.matrix(bivAR1.p) %*% t(Dcoef) + MASS::mvrnorm(n=numObs, mu=rep(0,2), Sigma=errCovMat.r)
+      }
       
       if (embedSines) {
         # embed the sinusoids
@@ -272,13 +303,6 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # Bartlett CCVF of response series
       bart.ccv.r <- ccf(x=bivAR1.r[,1], y=bivAR1.r[,2], type="covariance",
                         lag.max=numObs-1, plot=FALSE)
-      # Bartlett ACVFs for responses; for use in calculating corr
-      bart.acv1.r <- acf(x=bivAR1.r[,1], type="covariance", lag.max=numObs-1,
-                         plot=FALSE)
-      bart.acv2.r <- acf(x=bivAR1.r[,2], type="covariance", lag.max=numObs-1,
-                         plot=FALSE)
-      bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
-      bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
       # bart.ccv.r$acf[which(bart.ccv.r$acf<1e-18)] <- 0 # truncate at 1e-18
       # put them into a matrix (has a Toeplitz form)
       # bart.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
@@ -293,16 +317,10 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- Bartlett-based
       covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r$acf),
                                              as.vector(t(mpi.X2)) )
-      var.b1.bart <- mpi.X1 %*% toepLeftMult2( bart.acv1.r, as.vector(t(mpi.X1)) )
-      var.b2.bart <- mpi.X2 %*% toepLeftMult2( bart.acv2.r, as.vector(t(mpi.X2)) )
-      corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
-      # covB.bart <- mpi.X1 %*% bart.ccv.r.mat %*% t(mpi.X2)
+      # covB.bart <- mpi.X1 %*% bart.ccv.r.mat %*% t(mpi.X2) # brute force
       
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- theoretical-based
       covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
-      var.b1.theo <- mpi.X1 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X1)) )
-      var.b2.theo <- mpi.X2 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X2)) )
-      corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
       
       # compute the cross spectrum of (Y_1,Y_2)
       Y1mtx <- matrix(c(with(bivAR1.r, X1-mean(X1)), rep(0,M-numObs)), nrow=M, ncol=K)
@@ -317,37 +335,61 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # put entries in "correct" order, from -numObs to +numObs
       mtap.ccv.r <- Re(mtap.ccv.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
       
-      # autospectra for Y_1 and Y_2
-      autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
-      autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
-      
-      # ACVFs of Y_1 and Y_2
-      mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / numObs
-      mtap.acv2.r <- fft(z=autoSpecEstY2, inverse=TRUE) / numObs
-      mtap.acv1.r <- Re(mtap.acv1.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
-      mtap.acv2.r <- Re(mtap.acv2.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
-      
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
       covB.mtap <- mpi.X1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2)) )
-      var.b1.mtap <- mpi.X1 %*% toepLeftMult2( mtap.acv1.r, as.vector(t(mpi.X1)) )
-      var.b2.mtap <- mpi.X2 %*% toepLeftMult2( mtap.acv2.r, as.vector(t(mpi.X2)) )
-      corB.mtap <- covB.mtap / sqrt(var.b1.mtap * var.b2.mtap)
       # covB.mtap <- mpi.X1 %*% mtap.ccv.r.mat %*%
       #   t(mpi.X2)
       
+      if (computeCorr) {
+        # Bartlett ACVFs for responses; for use in calculating corr
+        bart.acv1.r <- acf(x=bivAR1.r[,1], type="covariance", lag.max=numObs-1,
+                           plot=FALSE)
+        bart.acv2.r <- acf(x=bivAR1.r[,2], type="covariance", lag.max=numObs-1,
+                           plot=FALSE)
+        bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
+        bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
+        var.b1.bart <- mpi.X1 %*% toepLeftMult2( bart.acv1.r, as.vector(t(mpi.X1)) )
+        var.b2.bart <- mpi.X2 %*% toepLeftMult2( bart.acv2.r, as.vector(t(mpi.X2)) )
+        corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
+        
+        # theoretical correlations
+        var.b1.theo <- mpi.X1 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X1)) )
+        var.b2.theo <- mpi.X2 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X2)) )
+        corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
+        
+        # autospectra for Y_1 and Y_2
+        autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
+        autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
+        
+        # ACVFs of Y_1 and Y_2, based on mtm
+        mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / numObs
+        mtap.acv2.r <- fft(z=autoSpecEstY2, inverse=TRUE) / numObs
+        mtap.acv1.r <- Re(mtap.acv1.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
+        mtap.acv2.r <- Re(mtap.acv2.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
+      
+        
+        var.b1.mtap <- mpi.X1 %*% toepLeftMult2( mtap.acv1.r, as.vector(t(mpi.X1)) )
+        var.b2.mtap <- mpi.X2 %*% toepLeftMult2( mtap.acv2.r, as.vector(t(mpi.X2)) )
+        corB.mtap <- covB.mtap / sqrt(var.b1.mtap * var.b2.mtap)
+      }
+      
       # update the betas data.frame
-      betas[j,] <- c(as.numeric(model1$coefficients),
-                     as.numeric(model2$coefficients),
-                     covB.bart, covB.theo, covB.mtap,
-                     corB.bart, corB.theo, corB.mtap)
+      betas.newRow <- c(as.numeric(model1$coefficients),
+                        as.numeric(model2$coefficients),
+                        covB.bart, covB.theo, covB.mtap)
+      if (computeCorr) {
+        betas.newRow <- c(betas.newRow, c(corB.bart, corB.theo, corB.mtap))
+      }
+      betas[j,] <- betas.newRow
+                     
       # betas.s[j,] <- c(as.numeric(model1.s$coefficients),
       #                  as.numeric(model2.s$coefficients),
       #                  covB.bart.s, covB.theo.s)
     }
     cat(paste0("########   end : ",Sys.time()),"\n")
     
-    betas$se.bart <- (betas$cv.theo-betas$cv.bart)**2
-    betas$se.mtap <- (betas$cv.theo-betas$cv.mtap)**2
+    betas$se.bart <- (with(betas, {cv.theo-cv.bart}))**2
+    betas$se.mtap <- (with(betas, {cv.theo-cv.mtap}))**2
     
     betasOverN[[n]] <- betas # update the list of dfs
   } # end for loop over n in numObsVec
@@ -370,6 +412,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     result[k,c("qSE.02.bart","qSE.02.mtap")] <- qSE[2,]
     
     result[k,"smpl.cov"] <- cov(x=dfObj$b1, y=dfObj$b2)
+    result[k,"smpl.cor"] <- cor(x=dfObj$b1, y=dfObj$b2)
   }
   
   result$CI.bart <- result$qSE.98.bart-result$qSE.02.bart
@@ -383,7 +426,8 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
              paste0("W=",W)
            ), "\n",
     ifelse(embedSines, "S", "No s"), "ines embedded\n",
-    NUM_REGR, " regressions per N"
+    NUM_REGR, " regressions per N",
+    ifelse(linDepY, "\nY2=Y1+e", "")
     )
   
   # MSE plot
