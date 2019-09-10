@@ -20,7 +20,7 @@ errCovMat.p <- diag(1,2)
 
 X <- ar1.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                   errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                  numObsVec=seq(2,10,2) * 1e2, NUM_REGR=100,
+                  numObsVec=seq(5,25,5) * 1e2, NUM_REGR=100,
                   mtmFixed="NW", W=0.005, timeBandProd=7, numTapers=13,
                   writeImgFile=FALSE, embedSines=FALSE, linDepY=FALSE,
                   computeCorr=TRUE)
