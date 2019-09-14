@@ -210,7 +210,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   }
   if (linDepY) {
     cat("Responses 'linearly dependent' by design; \`phiMat.r\` not used.\n")
-}
+  }
   
   betasOverN <- list() # list of data.frames for the \hat{beta}s
   
@@ -251,32 +251,42 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     #                          row(theo.ccv.r.mat)-col(theo.ccv.r.mat)],numObs,numObs)
     
     # compute the Slepians
-    M <- 3*2^(trunc(log2(numObs))+1)
+    M <- 2*2^(trunc(log2(numObs))+2)
     if (mtmFixed=="NW") {
-      sleps <- multitaper::dpss(M, k=numTapers, nw=timeBandProd) # fixed NW
+      sleps <- multitaper::dpss(numObs, k=numTapers, nw=timeBandProd) # fixed NW
     } else if (mtmFixed=="W") {
-      sleps <- multitaper::dpss(M, k=trunc(2*numObs*W), nw=numObs*W) # fixed W
+      sleps <- multitaper::dpss(numObs, k=trunc(2*numObs*W), nw=numObs*W) # fixed W
     } else {
       stop("mtmFixed must be either 'NW' or 'W'.")
     }
     
     K <- dim(sleps$v)[2] # number of tapers
+    slepMat <- matrix(0, nrow=M, ncol=K)
+    for (k in seq(1,K)) { slepMat[(1:numObs),k] <- sleps$v[,k] }
+    
     
     # sample df of \hat{beta}s for regular processes and sine-embedded
     betas <- as.data.frame(matrix(nrow=NUM_REGR, ncol=length(betas.head)))
     names(betas) <- betas.head
     # betas.s <- betas
     
+    # predictor series (X_1,X_2) realization
+    bivAR1.p <- mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs)
+    
     if (embedSines) {
       # generate sinusoids
       sines <- matrix(nrow=numObs, ncol=2)
-      sines[,1] <- sin(2*pi/30*(1:numObs))
-      sines[,2] <- sin(2*pi/20*(1:numObs))
+      sines[,1] <- sin(2*pi/36*(1:numObs))
+      sines[,2] <- sin(2*pi/24*(1:numObs))
       sines <- 10 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
+      
+      bivAR1.p <- bivAR1.p + sines # embed sinusoids in predictor series
     }
     
-    bivAR1.p <- mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs)
-      
+    # Moore-Penrose inverses
+    mpi.X1 <- MASS::ginv(as.matrix(bivAR1.p[,1]))
+    mpi.X2 <- MASS::ginv(as.matrix(bivAR1.p[,2]))
+    
     cat(paste0("######## start : ",Sys.time()),"\n")
     for (j in 1:NUM_REGR) {
       if (linDepY) {
@@ -288,9 +298,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       }
       
       if (embedSines) {
-        # embed the sinusoids
-        bivAR1.r <- bivAR1.r + sines
-        bivAR1.p <- bivAR1.p + sines
+        bivAR1.r <- bivAR1.r + sines # embed sinusoids in response series
       }
       
       # regular lin regs
@@ -310,10 +318,6 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       #                          row(bart.ccv.r.mat)-col(bart.ccv.r.mat)],
       #                          numObs, numObs)
       
-      # Moore-Penrose inverses
-      mpi.X1 <- MASS::ginv(as.matrix(bivAR1.p[,1]))
-      mpi.X2 <- MASS::ginv(as.matrix(bivAR1.p[,2]))
-      
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- Bartlett-based
       covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r$acf),
                                              as.vector(t(mpi.X2)) )
@@ -322,23 +326,43 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- theoretical-based
       covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
       
-      # compute the cross spectrum of (Y_1,Y_2)
-      Y1mtx <- matrix(c(with(bivAR1.r, X1-mean(X1)), rep(0,M-numObs)), nrow=M, ncol=K)
-      Y1mtx <- mvfft(z=Y1mtx*sleps$v)
-      Y2mtx <- matrix(c(with(bivAR1.r, X2-mean(X2)), rep(0,M-numObs)), nrow=M, ncol=K)
-      Y2mtx <- mvfft(z=Y2mtx*sleps$v)
+      # compute the cross spectrum of (Y_1,Y_2) -- averaging of eigencoefs
+      Y1mtx <- matrix(c(bivAR1.r$X1, rep(0,M-numObs)), nrow=M, ncol=K)
+      Y1mtx <- mvfft(z=Y1mtx*slepMat)
+      Y2mtx <- matrix(c(bivAR1.r$X2, rep(0,M-numObs)), nrow=M, ncol=K)
+      Y2mtx <- mvfft(z=Y2mtx*slepMat)
       crossSpecEstY <- (Y1mtx * Conj(Y2mtx)) %*% rep(1,K)/K
       
+      # compute spec.mtm objects for both response series components
+      # spec.y1 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X1, rep(0,M-numObs))),
+      #                                 adaptiveWeighting=TRUE, dpssIN=slepMat,
+      #                                 returnInternals=TRUE, plot=FALSE)
+      # spec.y2 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X2, rep(0,M-numObs))),
+      #                                 adaptiveWeighting=TRUE, dpssIN=slepMat,
+      #                                 returnInternals=TRUE, plot=FALSE)
+      
+      # wieghts and eigencoefficients
+      # d1 <- spec.y1$mtm$eigenCoefWt
+      # d2 <- spec.y2$mtm$eigenCoefWt
+      # y1 <- spec.y1$mtm$eigenCoefs
+      # y2 <- spec.y2$mtm$eigenCoefs
+      
+      # compute the cross spectrum of (Y_1,Y_2) -- adaptive weighted eigencoefs
+      # crossSpecEstY <- apply(d1*y1*d2*Conj(y2), MARGIN=1, FUN=sum) /
+      #   apply(d1*d2, MARGIN=1, FUN=sum)
+      
+      # cross spectrum over full [0,1) interval
+      # crossSpecEstY <- c(crossSpecEstY, Conj(crossSpecEstY)[M:2])
+      
       # CCVF of Y_1 and Y_2
-      mtap.ccv.r <- fft(z=crossSpecEstY, inverse=TRUE) / numObs
+      mtap.ccv.r <- fft(z=crossSpecEstY, inverse=TRUE) / M
       
       # put entries in "correct" order, from -numObs to +numObs
-      mtap.ccv.r <- Re(mtap.ccv.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
+      mtap.ccv.r <- Re(mtap.ccv.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs))]) # change M to 2*M here if using spec.mtm...?
       
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
       covB.mtap <- mpi.X1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2)) )
-      # covB.mtap <- mpi.X1 %*% mtap.ccv.r.mat %*%
-      #   t(mpi.X2)
+      # covB.mtap <- mpi.X1 %*% mtap.ccv.r.mat %*% t(mpi.X2)
       
       if (computeCorr) {
         # Bartlett ACVFs for responses; for use in calculating corr
@@ -358,8 +382,10 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
         
         # autospectra for Y_1 and Y_2
-        autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
-        autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
+        autoSpecEstY1 <- apply(d1*y1*d1*Conj(y1), MARGIN=1, FUN=sum) /
+          apply(d1*d1, MARGIN=1, FUN=sum)
+        autoSpecEstY1 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
+          apply(d2*d2, MARGIN=1, FUN=sum)
         
         # ACVFs of Y_1 and Y_2, based on mtm
         mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / numObs

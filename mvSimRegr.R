@@ -2,7 +2,7 @@
 
 tryCatch(setwd("~/multivar-sims"),
          error=function(e) {
-           tryCatch( setwd("~/WORK/Q5/masters-thesis/code/multivar-sims"))
+           tryCatch( setwd("~/WORK/Q5/masters-thesis/code/multivar-sims") )
          }
 )
 
@@ -14,20 +14,20 @@ source("helpers_mvSimRegr.R") # import helper functions
 ################################## set params ##################################
 # parameters for bivariate AR(1)
 phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
-phiMat.p <- matrix(c(0.9,-0.2,0.5,-0.3), nrow=2, ncol=2, byrow=TRUE)
-errCovMat.r <- diag(1,2) + matrix(c(0,0.99,0.99,0), 2, 2)
-errCovMat.p <- diag(1,2)
+phiMat.p <- matrix(c(0.7,-0.2,0.5,0.3), nrow=2, ncol=2, byrow=TRUE)
+errCovMat.r <- 0.5 * (diag(1,2) + matrix(c(0,0,0,0), 2, 2))
+errCovMat.p <- 0.5 * diag(1,2)
 
 X <- ar1.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                   errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                  numObsVec=seq(5,25,5) * 1e2, NUM_REGR=100,
-                  mtmFixed="NW", W=0.005, timeBandProd=7, numTapers=13,
+                  numObsVec=seq(5,10,5) * 1e2, NUM_REGR=100,
+                  mtmFixed="W", W=0.015, timeBandProd=6, numTapers=11,
                   writeImgFile=FALSE, embedSines=FALSE, linDepY=FALSE,
-                  computeCorr=TRUE)
+                  computeCorr=FALSE)
 
-mean(X$betasOverN[[3]]$b1)
-mean(X$betasOverN[[3]]$b2)
-head(X$betasOverN[[3]])
+mean(X$betasOverN[[1]]$b1)
+mean(X$betasOverN[[1]]$b2)
+head(X$betasOverN[[1]])
 X$result
 
 
