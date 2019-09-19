@@ -220,26 +220,28 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     betas.head <- c(betas.head, c("cor.bart","cor.theo","cor.mtap"))
   }
   
+  # \cov{Y_1,Y_2} from -(N-1) to +(N-1), where N is max(numObsVec); to subset
+  maxmaxlag <- max(numObsVec)-1
+  CCVmats.master <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r,
+                                maxlag=maxmaxlag)
+  
   ############################# do main computations #############################
   for (n in seq(1,length(numObsVec))) {
     numObs <- numObsVec[n]
     cat(paste0("################ N=",numObs,"\n"))
     
-    # \cov{Y_1,Y_2} from -maxlag to +maxlag
-    maxlag=numObs-1
+    maxlag <- numObs-1
     if (linDepY) {
-      phi <- 0.4 # AR coef for Y_1
-      a <- 1 # scale on Y_2
+      phi <- 0.95 # AR coef for Y_1
+      a <- 2.5 # scale on Y_2
       varZ.Y1 <- 0.2
       addedNoiseVar.Y2 <- 0.05
       theo.acv1.r <- phi^(abs(seq(-maxlag, maxlag))) * varZ.Y1 / (1-phi^2)
       theo.acv2.r <- a^2 * theo.acv1.r + ((-maxlag:maxlag)==0) * addedNoiseVar.Y2
       theo.ccv.r <- a * theo.acv1.r
     } else {
-      # comment/leave in below as -++ to make resp series lin. dep. on pred series
-      CCVmats <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r, maxlag=maxlag)
-      # Dcoef <- diag(c(10,15)) # diag matrix to multiply pred rlzn by to get resp rlzn
-      # CCVmats <- bivAR1.ccvf.D(ccvfMats=bivAR1.ccvf(coefMat=phiMat.p, V=errCovMat.p, maxlag=maxlag),D=Dcoef,V=errCovMat.r)
+      # subset CCVmats.master to go from -maxlag to +maxlag
+      CCVmats <- CCVmats.master[,2*maxmaxlag + seq(-2*maxlag+1,2*maxlag+2,1)]
       theo.ccv.r <- CCVmats[1,2*seq(0,2*maxlag)+2]
       theo.acv1.r <- CCVmats[1,2*seq(0,2*maxlag)+1]
       theo.acv2.r <- CCVmats[2,2*seq(0,2*maxlag)+2]
@@ -251,7 +253,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     #                          row(theo.ccv.r.mat)-col(theo.ccv.r.mat)],numObs,numObs)
     
     # compute the Slepians
-    M <- 2*2^(trunc(log2(numObs))+2)
+    M <- 2^(trunc(log2(numObs))+2)
     if (mtmFixed=="NW") {
       sleps <- multitaper::dpss(numObs, k=numTapers, nw=timeBandProd) # fixed NW
     } else if (mtmFixed=="W") {
@@ -261,8 +263,8 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     }
     
     K <- dim(sleps$v)[2] # number of tapers
-    slepMat <- matrix(0, nrow=M, ncol=K)
-    for (k in seq(1,K)) { slepMat[(1:numObs),k] <- sleps$v[,k] }
+    slepMat <- rbind(sleps$v, matrix(0, M-numObs, K)) # matrix(0, nrow=M, ncol=K)
+    # for (k in seq(1,K)) { slepMat[(1:numObs),k] <- sleps$v[,k] }
     
     
     # sample df of \hat{beta}s for regular processes and sine-embedded
@@ -276,9 +278,9 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     if (embedSines) {
       # generate sinusoids
       sines <- matrix(nrow=numObs, ncol=2)
-      sines[,1] <- sin(2*pi/36*(1:numObs))
-      sines[,2] <- sin(2*pi/24*(1:numObs))
-      sines <- 10 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
+      sines[,1] <- 0.7*sin(2*pi/360*(1:numObs)) + 0.5*sin(2*pi/150*(1:numObs))
+      sines[,2] <- sin(2*pi/240*(1:numObs)) + sin(2*pi/30*(1:numObs))
+      sines <- 5 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
       
       bivAR1.p <- bivAR1.p + sines # embed sinusoids in predictor series
     }
@@ -334,18 +336,18 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       crossSpecEstY <- (Y1mtx * Conj(Y2mtx)) %*% rep(1,K)/K
       
       # compute spec.mtm objects for both response series components
-      # spec.y1 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X1, rep(0,M-numObs))),
-      #                                 adaptiveWeighting=TRUE, dpssIN=slepMat,
-      #                                 returnInternals=TRUE, plot=FALSE)
-      # spec.y2 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X2, rep(0,M-numObs))),
-      #                                 adaptiveWeighting=TRUE, dpssIN=slepMat,
-      #                                 returnInternals=TRUE, plot=FALSE)
+      spec.y1 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X1, rep(0,M-numObs))),
+                                      adaptiveWeighting=TRUE, dpssIN=slepMat,
+                                      returnInternals=TRUE, plot=FALSE)
+      spec.y2 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X2, rep(0,M-numObs))),
+                                      adaptiveWeighting=TRUE, dpssIN=slepMat,
+                                      returnInternals=TRUE, plot=FALSE)
       
       # wieghts and eigencoefficients
-      # d1 <- spec.y1$mtm$eigenCoefWt
-      # d2 <- spec.y2$mtm$eigenCoefWt
-      # y1 <- spec.y1$mtm$eigenCoefs
-      # y2 <- spec.y2$mtm$eigenCoefs
+      d1 <- spec.y1$mtm$eigenCoefWt
+      d2 <- spec.y2$mtm$eigenCoefWt
+      y1 <- spec.y1$mtm$eigenCoefs
+      y2 <- spec.y2$mtm$eigenCoefs
       
       # compute the cross spectrum of (Y_1,Y_2) -- adaptive weighted eigencoefs
       # crossSpecEstY <- apply(d1*y1*d2*Conj(y2), MARGIN=1, FUN=sum) /
@@ -382,10 +384,12 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
         
         # autospectra for Y_1 and Y_2
-        autoSpecEstY1 <- apply(d1*y1*d1*Conj(y1), MARGIN=1, FUN=sum) /
-          apply(d1*d1, MARGIN=1, FUN=sum)
-        autoSpecEstY1 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
-          apply(d2*d2, MARGIN=1, FUN=sum)
+        # autoSpecEstY1 <- apply(d1*y1*d1*Conj(y1), MARGIN=1, FUN=sum) /
+        #   apply(d1*d1, MARGIN=1, FUN=sum)
+        # autoSpecEstY1 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
+        #   apply(d2*d2, MARGIN=1, FUN=sum)
+        autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
+        autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
         
         # ACVFs of Y_1 and Y_2, based on mtm
         mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / numObs
@@ -414,8 +418,13 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     }
     cat(paste0("########   end : ",Sys.time()),"\n")
     
-    betas$se.bart <- (with(betas, {cv.theo-cv.bart}))**2
-    betas$se.mtap <- (with(betas, {cv.theo-cv.mtap}))**2
+    if (!computeCorr) {
+      betas$se.bart <- (with(betas, {cv.theo-cv.bart}))**2
+      betas$se.mtap <- (with(betas, {cv.theo-cv.mtap}))**2
+    } else {
+      betas$se.bart <- (with(betas, {cor.theo-cor.bart}))**2
+      betas$se.mtap <- (with(betas, {cor.theo-cor.mtap}))**2
+    }
     
     betasOverN[[n]] <- betas # update the list of dfs
   } # end for loop over n in numObsVec
@@ -430,7 +439,13 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # betasOverN[[k]][,"mse.mtap"] <- ( betasOverN[[k]][,"cv.theo"] - betasOverN[[k]][,"cv.mtap"] )**2
     dfObj <- betasOverN[[k]]
     result[k,c("mse.bart","mse.mtap")] <- apply(X=dfObj[,c("se.bart","se.mtap")],MARGIN=2,FUN=mean)
-    result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("cv.bart","cv.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
+    
+    if (!computeCorr) {
+      result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("cv.bart","cv.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
+    } else {
+      result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("cor.bart","cor.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
+    }
+      
     result[k,c("sqbias.bart","sqbias.mtap")] <- result[k,c("mse.bart","mse.mtap")]-result[k,c("var.bart","var.mtap")]
     
     qSE <- apply(X=dfObj[,c("se.bart","se.mtap")], MARGIN=2, FUN=quantile, c(0.98,0.02)) # quantiles for approximate CIs
@@ -495,7 +510,8 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   if (writeImgFile) { dev.off() }
   
   
-  return(list(betasOverN=betasOverN, result=result))
+  return(list(betasOverN=betasOverN, result=result, theo.ccv.r=theo.ccv.r,
+              bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r, d1=d1, d2=d2))
   
 }
 # end ar1.regr.cov
