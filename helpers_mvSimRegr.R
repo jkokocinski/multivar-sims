@@ -189,6 +189,7 @@ bivAR1.ccvf.D <- function(ccvfMats, D, V) {
 ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                          numObsVec, NUM_REGR,
                          mtmFixed="NW", timeBandProd=4, numTapers=7, W,
+                         adaptWt=FALSE,
                          writeImgFile=FALSE, embedSines=TRUE,
                          linDepY=FALSE, computeCorr=FALSE) {
   
@@ -253,7 +254,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     #                          row(theo.ccv.r.mat)-col(theo.ccv.r.mat)],numObs,numObs)
     
     # compute the Slepians
-    M <- 2^(trunc(log2(numObs))+2)
+    # M <- 2^(trunc(log2(numObs))+2)
     if (mtmFixed=="NW") {
       sleps <- multitaper::dpss(numObs, k=numTapers, nw=timeBandProd) # fixed NW
     } else if (mtmFixed=="W") {
@@ -263,9 +264,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     }
     
     K <- dim(sleps$v)[2] # number of tapers
-    slepMat <- rbind(sleps$v, matrix(0, M-numObs, K)) # matrix(0, nrow=M, ncol=K)
-    # for (k in seq(1,K)) { slepMat[(1:numObs),k] <- sleps$v[,k] }
-    
+    slepMat <- sleps$v
     
     # sample df of \hat{beta}s for regular processes and sine-embedded
     betas <- as.data.frame(matrix(nrow=NUM_REGR, ncol=length(betas.head)))
@@ -329,18 +328,20 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
       
       # compute the cross spectrum of (Y_1,Y_2) -- averaging of eigencoefs
-      Y1mtx <- matrix(c(bivAR1.r$X1, rep(0,M-numObs)), nrow=M, ncol=K)
-      Y1mtx <- mvfft(z=Y1mtx*slepMat)
-      Y2mtx <- matrix(c(bivAR1.r$X2, rep(0,M-numObs)), nrow=M, ncol=K)
-      Y2mtx <- mvfft(z=Y2mtx*slepMat)
-      crossSpecEstY <- (Y1mtx * Conj(Y2mtx)) %*% rep(1,K)/K
+      # Y1mtx <- matrix(bivAR1.r$X1, nrow=numObs, ncol=K)
+      # Y1mtx <- mvfft(z=rbind(Y1mtx*slepMat, matrix(0,nrow=M-numObs, ncol=K)))
+      # Y2mtx <- matrix(bivAR1.r$X2, nrow=numObs, ncol=K)
+      # Y2mtx <- mvfft(z=rbind(Y2mtx*slepMat, matrix(0,nrow=M-numObs, ncol=K)))
+      # crossSpecEstY <- (Y1mtx * Conj(Y2mtx)) %*% rep(1,K)/K
       
       # compute spec.mtm objects for both response series components
-      spec.y1 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X1, rep(0,M-numObs))),
-                                      adaptiveWeighting=TRUE, dpssIN=slepMat,
+      spec.y1 <- multitaper::spec.mtm(timeSeries=ts(bivAR1.r$X1), k=K,
+                                      ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+                                      adaptiveWeighting=adaptWt, dpssIN=slepMat,
                                       returnInternals=TRUE, plot=FALSE)
-      spec.y2 <- multitaper::spec.mtm(timeSeries=ts(c(bivAR1.r$X2, rep(0,M-numObs))),
-                                      adaptiveWeighting=TRUE, dpssIN=slepMat,
+      spec.y2 <- multitaper::spec.mtm(timeSeries=ts(bivAR1.r$X2), k=K,
+                                      ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+                                      adaptiveWeighting=adaptWt, dpssIN=slepMat,
                                       returnInternals=TRUE, plot=FALSE)
       
       # wieghts and eigencoefficients
@@ -349,18 +350,22 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       y1 <- spec.y1$mtm$eigenCoefs
       y2 <- spec.y2$mtm$eigenCoefs
       
+      if (!adaptWt) {
+        d2 <- d1 <- matrix(1, nrow=dim(y1)[1], ncol=dim(y1)[2])
+      }
+      
       # compute the cross spectrum of (Y_1,Y_2) -- adaptive weighted eigencoefs
-      # crossSpecEstY <- apply(d1*y1*d2*Conj(y2), MARGIN=1, FUN=sum) /
-      #   apply(d1*d2, MARGIN=1, FUN=sum)
+      crossSpecEstY <- apply(d1*y1*d2*Conj(y2), MARGIN=1, FUN=sum) /
+        apply(d1*d2, MARGIN=1, FUN=sum)
       
       # cross spectrum over full [0,1) interval
-      # crossSpecEstY <- c(crossSpecEstY, Conj(crossSpecEstY)[M:2])
+      crossSpecEstY <- c(crossSpecEstY, rev(Conj(crossSpecEstY[-1]))[-1])
       
       # CCVF of Y_1 and Y_2
-      mtap.ccv.r <- fft(z=crossSpecEstY, inverse=TRUE) / M
+      mtap.ccv.r <- fft(z=crossSpecEstY, inverse=TRUE) / length(crossSpecEstY)
       
       # put entries in "correct" order, from -numObs to +numObs
-      mtap.ccv.r <- Re(mtap.ccv.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs))]) # change M to 2*M here if using spec.mtm...?
+      mtap.ccv.r <- Re(c(tail(mtap.ccv.r, numObs-1), head(mtap.ccv.r, numObs)))
       
       # \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
       covB.mtap <- mpi.X1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2)) )
