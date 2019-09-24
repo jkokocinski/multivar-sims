@@ -40,11 +40,10 @@ errCovMat.p <- 0.5 * diag(1,2)
 
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=seq(10,10,1) * 1e3, NUM_REGR=100,
+                 numObsVec=seq(4,4,1) * 1e2, NUM_REGR=100,
                  mtmFixed="NW", W=0.005, timeBandProd=6, numTapers=11,
-                 adaptWt=FALSE, writeImgFile=FALSE, embedSines=FALSE,
+                 adaptWt=FALSE, writeImgFile=FALSE, embedSines=TRUE,
                  linDepY=FALSE, computeCorr=FALSE)
-
 
 
 
@@ -54,12 +53,12 @@ X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
 
 # ACVF plots
 par(mar=c(4,4,1,1))
-plot(x=(-50:50), y=X$theo.ccv.r[(-50:50)+2e3], type="h",
+plot(x=(-50:50), y=X$theo.ccv.r[(-50:50)+4e2], type="h",
      ylim=range( c(X$theo.ccv.r, X$mtap.ccv.r, X$bart.ccv.r$acf) ),
      ylab="CCVF (Y1,Y2)", xlab="Lag")
 abline(h=0)
-points(x=(-50:50), y=X$mtap.ccv.r[(-50:50)+2e3], col="blue")
-points(x=(-50:50), y=X$bart.ccv.r$acf[(-50:50)+2e3], col="goldenrod")
+points(x=(-50:50), y=X$mtap.ccv.r[(-50:50)+4e2], col="blue")
+points(x=(-50:50), y=X$bart.ccv.r$acf[(-50:50)+4e2], col="goldenrod")
 
 
 

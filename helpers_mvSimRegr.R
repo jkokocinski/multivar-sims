@@ -427,19 +427,22 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
         
         # autospectra for Y_1 and Y_2
-        # autoSpecEstY1 <- apply(d1*y1*d1*Conj(y1), MARGIN=1, FUN=sum) /
-        #   apply(d1*d1, MARGIN=1, FUN=sum)
-        # autoSpecEstY1 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
-        #   apply(d2*d2, MARGIN=1, FUN=sum)
-        autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
-        autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
+        autoSpecEstY1 <- apply(d1*y1*d1*Conj(y1), MARGIN=1, FUN=sum) /
+          apply(d1*d1, MARGIN=1, FUN=sum)
+        autoSpecEstY2 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
+          apply(d2*d2, MARGIN=1, FUN=sum)
+        # autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
+        # autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
+        
+        # autospectra over full [0,1) interval
+        autoSpecEstY1 <- c(autoSpecEstY1, rev(Conj(autoSpecEstY1[-1]))[-1])
+        autoSpecEstY2 <- c(autoSpecEstY2, rev(Conj(autoSpecEstY2[-1]))[-1])
         
         # ACVFs of Y_1 and Y_2, based on mtm
-        mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / numObs
-        mtap.acv2.r <- fft(z=autoSpecEstY2, inverse=TRUE) / numObs
-        mtap.acv1.r <- Re(mtap.acv1.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
-        mtap.acv2.r <- Re(mtap.acv2.r[c(seq(M-(numObs-1)+1,M), seq(1,numObs)), 1])
-      
+        mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / length(autoSpecEstY1)
+        mtap.acv2.r <- fft(z=autoSpecEstY2, inverse=TRUE) / length(autoSpecEstY2)
+        mtap.acv1.r <- Re(c(tail(mtap.acv1.r, numObs-1), head(mtap.acv1.r, numObs)))
+        mtap.acv2.r <- Re(c(tail(mtap.acv2.r, numObs-1), head(mtap.acv2.r, numObs)))
         
         var.b1.mtap <- mpi.X1 %*% toepLeftMult2( mtap.acv1.r, as.vector(t(mpi.X1)) )
         var.b2.mtap <- mpi.X2 %*% toepLeftMult2( mtap.acv2.r, as.vector(t(mpi.X2)) )
@@ -554,7 +557,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   
   
   return(list(betasOverN=betasOverN, result=result, theo.ccv.r=theo.ccv.r,
-              bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r,
+              bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r, d1=d1, d2=d2,
               theo.acv1.r=theo.acv1.r))
   
 }
