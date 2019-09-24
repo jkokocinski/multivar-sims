@@ -5,16 +5,20 @@
 #
 psumCov <- function(A, V=diag(1,dim(A)[1])) {
   if (dim(A)[1]!=dim(A)[2]) stop("Not a square matrix.")
+  ev <- eigen(x=A, only.values=TRUE)$values
+  if (any(Mod(ev) > 1)) stop("Unstable AR model.")
   
   if (isSymmetric(A)) { # A is symmetric
     cat("A is symmetric.\n")
-    if (V[1,1]==V[2,2] & V[1,2]==0 & V[2,1]==0) { # V is scalar mult. of I_2
-      cat("V is scalar multiple of identity.\n")
-      tryCatch(
-        { return( solve(diag(1,2) - A%*%A) * V[1,1] ) },
-        error=function(e) {cat("Unstable AR process.\n")}
-        )
-    }
+    if (dim(V)[1]==2) {
+      if (V[1,1]==V[2,2] & V[1,2]==0 & V[2,1]==0) { # V is scalar mult. of I_2
+        cat("V is scalar multiple of identity.\n")
+        tryCatch(
+          { return( solve(diag(1,2) - A%*%A) * V[1,1] ) },
+          error=function(e) {cat("Unstable AR model.\n")}
+          )
+        }
+      }
   }
   
   cat("Using partial sum method.\n")
@@ -118,8 +122,42 @@ bivAR1.ccvf <- function(coefMat, V=diag(1,2), maxlag=1) {
       t(coefMat)
   }
   return(CCVmats)
-}
+} # end bivAR1.ccvf
 
+
+################################## bivARp.ccvf #################################
+#
+# bivARp.ccvf : Compute the CCVF for a bivariate AR(p) process, given the
+#   coefficient matrices (as a 2x2p matrix) and the variance of the innovations.
+#
+bivARp.ccvf <- function(coefMats, V=diag(1,2), maxlag=1) {
+  stopifnot(dim(coefMats)[1]==2, dim(coefMats)[2] %% 2 == 0)
+  stopifnot(maxlag>0)
+  
+  p <- dim(coefMats)[2] / 2
+  fullV <- matrix(0, nrow=2*p, ncol=2*p)
+  fullV[(1:2),(1:2)] <- V
+  
+  # block coef matrix with I_2 blocks on the subdiagonal
+  fullCoefMat <- rbind(coefMats, diag(1, 2*(p-1), 2*p))
+  
+  matrixSeries <- psumCov(fullCoefMat, V=fullV)
+  
+  CCVmats <- matrix(rep(matrixSeries,2*maxlag+1), nrow=2*p, ncol=2*p*(2*maxlag+1))
+  for (h in seq(1,maxlag,1)) {
+    startCol <- 2*p*maxlag+1 + 2*p*h # left-most column in matrix for lag +h
+    CCVmats[,seq(startCol, startCol + 2*p-1)] <- fullCoefMat %*%
+      CCVmats[,seq(startCol-2*p,startCol-1)]
+    
+    startCol <- dim(CCVmats)[2]-(startCol-1+2*p) +1  # left-most column in matrix for lag -h
+    CCVmats[,seq(startCol, startCol + 2*p-1)] <- CCVmats[,seq(startCol+2*p,startCol+2*2*p-1)] %*%
+      t(fullCoefMat)
+  }
+  
+  CCVmats <- CCVmats[(1:2), sort(outer(seq(0,2*maxlag)*2*p, (1:2), "+"))]
+  
+  return(CCVmats)
+} # end bivARp.ccvf
 
 ################################# bivAR1.ccvf.D ################################
 #
@@ -186,7 +224,7 @@ bivAR1.ccvf.D <- function(ccvfMats, D, V) {
 #   their estimated covariances (for each realization size), as well as the
 #   estimated MSEs of the regression coefficients in a data frame.
 #
-ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
+ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                          numObsVec, NUM_REGR,
                          mtmFixed="NW", timeBandProd=4, numTapers=7, W,
                          adaptWt=FALSE,
@@ -223,7 +261,7 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   
   # \cov{Y_1,Y_2} from -(N-1) to +(N-1), where N is max(numObsVec); to subset
   maxmaxlag <- max(numObsVec)-1
-  CCVmats.master <- bivAR1.ccvf(coefMat=phiMat.r, V=errCovMat.r,
+  CCVmats.master <- bivARp.ccvf(coefMat=phiMat.r, V=errCovMat.r,
                                 maxlag=maxmaxlag)
   
   ############################# do main computations #############################
@@ -516,7 +554,8 @@ ar1.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   
   
   return(list(betasOverN=betasOverN, result=result, theo.ccv.r=theo.ccv.r,
-              bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r, d1=d1, d2=d2))
+              bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r,
+              theo.acv1.r=theo.acv1.r))
   
 }
 # end ar1.regr.cov
