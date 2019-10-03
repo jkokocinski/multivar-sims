@@ -3,10 +3,12 @@
 # psumCov : function to compute sum of A^k %*% V %*% t(A)^k, k from 0 to infty,
 #   truncated such that successive term difference is less than epsilon.
 #
-psumCov <- function(A, V=diag(1,dim(A)[1])) {
+psumCov <- function(A, V) {
   if (dim(A)[1]!=dim(A)[2]) stop("Not a square matrix.")
   ev <- eigen(x=A, only.values=TRUE)$values
   if (any(Mod(ev) > 1)) stop("Unstable AR model.")
+  
+  # if (V=="default") V <- diag(c(rep(1,2), rep(0,dim(A)[2]-2)))
   
   if (isSymmetric(A)) { # A is symmetric
     cat("A is symmetric.\n")
@@ -26,9 +28,10 @@ psumCov <- function(A, V=diag(1,dim(A)[1])) {
   epsilon <- 1
   iter <- 1
   while (epsilon>1e-16) { # threshold for convergence
-    if (iter>1e6) {
-      stop("Failed to converge after 1e6 terms.\n")
+    if (iter>1e12) {
+      stop("Failed to converge after 1e12 terms.\n")
     }
+    if (iter %in% 10**c(3:11)) { cat(paste0(iter,"\n")) }
     psum.old <- psum
     psum <- A %*% psum %*% t(A) + V
     epsilon <- max(abs(psum-psum.old))
@@ -141,7 +144,11 @@ bivARp.ccvf <- function(coefMats, V=diag(1,2), maxlag=1) {
   # block coef matrix with I_2 blocks on the subdiagonal
   fullCoefMat <- rbind(coefMats, diag(1, 2*(p-1), 2*p))
   
-  matrixSeries <- psumCov(fullCoefMat, V=fullV)
+  # matrixSeries <- psumCov(fullCoefMat, V=fullV)
+  matrixSeries <- matrix(
+    solve( diag(1, (2*p)**2) - kronecker(fullCoefMat, fullCoefMat) ) %*%
+      as.vector(fullV),
+    nrow=2*p, ncol=2*p)
   
   CCVmats <- matrix(rep(matrixSeries,2*maxlag+1), nrow=2*p, ncol=2*p*(2*maxlag+1))
   for (h in seq(1,maxlag,1)) {
@@ -315,9 +322,9 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     if (embedSines) {
       # generate sinusoids
       sines <- matrix(nrow=numObs, ncol=2)
-      sines[,1] <- 0.7*sin(2*pi/360*(1:numObs)) + 0.5*sin(2*pi/150*(1:numObs))
+      sines[,1] <- sin(2*pi/240*(1:numObs)) + 0.7*sin(2*pi/150*(1:numObs))
       sines[,2] <- sin(2*pi/240*(1:numObs)) + sin(2*pi/30*(1:numObs))
-      sines <- 5 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
+      sines <- 1 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
       
       bivAR1.p <- bivAR1.p + sines # embed sinusoids in predictor series
     }
@@ -325,6 +332,10 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # Moore-Penrose inverses
     mpi.X1 <- MASS::ginv(as.matrix(bivAR1.p[,1]))
     mpi.X2 <- MASS::ginv(as.matrix(bivAR1.p[,2]))
+    
+    # initialize averages of CCVF estimates
+    bart.ccv.r.avg <- rep(0, 2*numObs-1)
+    mtap.ccv.r.avg <- rep(0, 2*numObs-1)
     
     cat(paste0("######## start : ",Sys.time()),"\n")
     for (j in 1:NUM_REGR) {
@@ -423,7 +434,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         
         # theoretical correlations
         var.b1.theo <- mpi.X1 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X1)) )
-        var.b2.theo <- mpi.X2 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X2)) )
+        var.b2.theo <- mpi.X2 %*% toepLeftMult2( theo.acv2.r, as.vector(t(mpi.X2)) )
         corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
         
         # autospectra for Y_1 and Y_2
@@ -461,8 +472,14 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # betas.s[j,] <- c(as.numeric(model1.s$coefficients),
       #                  as.numeric(model2.s$coefficients),
       #                  covB.bart.s, covB.theo.s)
+      
+      bart.ccv.r.avg <- bart.ccv.r.avg + bart.ccv.r$acf
+      mtap.ccv.r.avg <- mtap.ccv.r.avg + mtap.ccv.r
     }
     cat(paste0("########   end : ",Sys.time()),"\n")
+    
+    bart.ccv.r.avg <- bart.ccv.r.avg / NUM_REGR
+    mtap.ccv.r.avg <- mtap.ccv.r.avg / NUM_REGR
     
     if (!computeCorr) {
       betas$se.bart <- (with(betas, {cv.theo-cv.bart}))**2
@@ -521,12 +538,13 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   MSE.plotLims <- range( result[,grepl("qSE", names(result))] )
   if (writeImgFile) {
     currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
-    pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=6, height=6)
+    pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
   }
   # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
   par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-  plot(x=result$N-5, y=result$mse.bart, xlab="Realization Size", ylab="MSE",
-       log="y", ylim=MSE.plotLims*c(1e-1,1e1), col="goldenrod", pch=16)
+  plot(x=result$N-5, y=result$mse.bart, xlab="Realization Size",
+       ylab=paste0("MSE of co",ifelse(computeCorr,"r","v"), " estimator"),
+       log="y", ylim=MSE.plotLims*10**c(-0.5,0.5), col="goldenrod", pch=16)
   points(x=result$N+5, y=result$mse.mtap, col="blue", pch=17)
   arrows(x0=result$N-5, y0=result$qSE.02.bart, x1=result$N-5, y1=result$qSE.98.bart,
          length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
@@ -539,7 +557,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   text(x=numObsVec, y=result$qSE.02.mtap, pos=1,
        labels=sprintf("%.2f", result$CI.bart/result$CI.mtap), family="mono",
        col="blue")
-  text(x=max(numObsVec), y=MSE.plotLims[1]*0.1, adj=c(1,0), family="mono",
+  text(x=max(numObsVec), y=MSE.plotLims[1]*10**(-0.0), adj=c(1,0), family="mono",
        labels="[ mtm rel. efficiency ]", col="blue")
   
   # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
@@ -556,9 +574,19 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   if (writeImgFile) { dev.off() }
   
   
-  return(list(betasOverN=betasOverN, result=result, theo.ccv.r=theo.ccv.r,
-              bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r, d1=d1, d2=d2,
-              theo.acv1.r=theo.acv1.r))
+  return(
+    list(
+      betasOverN=betasOverN,
+      result=result,
+      theo.ccv.r=theo.ccv.r, bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r,
+      theo.acv1.r=theo.acv1.r, bart.acv1.r=bart.acv1.r, bart.acv2.r=bart.acv2.r,
+      bart.ccv.r.avg=bart.ccv.r.avg, mtap.ccv.r.avg=mtap.ccv.r,
+      crossSpecEstY=crossSpecEstY,
+      autoSpecEstY1=autoSpecEstY1,
+      autoSpecEstY2=autoSpecEstY2,
+      d1=d1, d2=d2
+    )
+  )
   
 }
 # end ar1.regr.cov
