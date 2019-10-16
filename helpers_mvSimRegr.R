@@ -103,6 +103,30 @@ toepLeftMult2 <- function(toepVec,rightVec) {
 # end toepLeftMult2
 
 
+################################### bilinToep ##################################
+#
+#
+bilinToep <- function(leftVec,toepVec,rightVec) {
+  if (class(leftVec)!="numeric") { stop("leftVec must be a numeric vector.") }
+  if (class(toepVec)!="numeric") { stop("toepVec must be a numeric vector.") }
+  if (class(rightVec)!="numeric") { stop("rightVec must be a numeric vector.") }
+  if (length(toepVec)!=2*length(rightVec)-1) {
+    stop("non-conformable arguments")
+  }
+  if (length(leftVec)!=length(rightVec)) {
+    stop("non-conformable arguments")
+  }
+  N <- length(leftVec)
+  fft.lv <- fft(z=rev(c(rep(0, N-1), leftVec)))
+  fft.tv <- fft(z=toepVec)
+  fft.rv <- fft(z=c(rightVec, rep(0, N-1)))
+  resVec <- Re(fft(z=fft.lv*fft.tv*fft.rv, inverse=TRUE)) / (2*N-1)
+  resVal <- tail(resVec, n=1)
+  return(resVal)
+}
+# end bilinToep
+
+
 ################################## bivAR1.ccvf #################################
 #
 # bivAR1.ccvf : Compute the CCVF for a bivariate AR(1) process, given the
@@ -232,14 +256,21 @@ bivAR1.ccvf.D <- function(ccvfMats, D, V) {
 #   estimated MSEs of the regression coefficients in a data frame.
 #
 ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
-                         numObsVec, NUM_REGR,
-                         mtmFixed="NW", timeBandProd=4, numTapers=7, W,
-                         adaptWt=FALSE,
-                         writeImgFile=FALSE, embedSines=TRUE,
-                         linDepY=FALSE, computeCorr=FALSE) {
+                        numObsVec, NUM_REGR,
+                        mtmFixed="NW", timeBandProd=4, numTapers=7, W,
+                        adaptWt=FALSE,
+                        writeImgFile=FALSE, embedSines=TRUE,
+                        linDepY=FALSE, computeCorr=FALSE) {
+  
+  library(mAr) # depends on MASS
+  library(multitaper)
+  
+  params.init.str <- ls() # vector of initally set parameters
+  params.init <- eval(parse(text=paste0("list(",
+    paste0(params.init.str,"=",params.init.str, collapse=",\n"),")")))
   
   if(length(intersect(c("mAr", "multitaper"), rownames(installed.packages())))<2) {
-    stop("Ensure `mAr` and `multitaper` packages are loaded.")
+  stop("Ensure `mAr` and `multitaper` packages are loaded.")
   }
   
   if (mtmFixed=="W") {
@@ -322,8 +353,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     if (embedSines) {
       # generate sinusoids
       sines <- matrix(nrow=numObs, ncol=2)
-      sines[,1] <- sin(2*pi/240*(1:numObs)) + 0.7*sin(2*pi/150*(1:numObs))
-      sines[,2] <- sin(2*pi/240*(1:numObs)) + sin(2*pi/30*(1:numObs))
+      sines[,1] <- sin(2*pi/240*(1:numObs)) #+ 0.7*sin(2*pi/150*(1:numObs))
+      sines[,2] <- sin(2*pi/180*(1:numObs)) #+ sin(2*pi/30*(1:numObs))
       sines <- 1 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
       
       bivAR1.p <- bivAR1.p + sines # embed sinusoids in predictor series
@@ -384,20 +415,46 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # crossSpecEstY <- (Y1mtx * Conj(Y2mtx)) %*% rep(1,K)/K
       
       # compute spec.mtm objects for both response series components
-      spec.y1 <- multitaper::spec.mtm(timeSeries=ts(bivAR1.r$X1), k=K,
-                                      ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
-                                      adaptiveWeighting=adaptWt, dpssIN=slepMat,
-                                      returnInternals=TRUE, plot=FALSE)
-      spec.y2 <- multitaper::spec.mtm(timeSeries=ts(bivAR1.r$X2), k=K,
-                                      ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
-                                      adaptiveWeighting=adaptWt, dpssIN=slepMat,
-                                      returnInternals=TRUE, plot=FALSE)
+      spec.y1 <- multitaper::spec.mtm(
+        timeSeries=ts(bivAR1.r$X1), k=K,
+        nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+        adaptiveWeighting=adaptWt, dpssIN=slepMat,
+        Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+      )
+      spec.y2 <- multitaper::spec.mtm(
+        timeSeries=ts(bivAR1.r$X2), k=K,
+        nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+        adaptiveWeighting=adaptWt, dpssIN=slepMat,
+        Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+      )
+      
+      # sinusoidal line components
+      # seas1 <- determineSeasonal(data=bivAR1.r$X1, sigCutoff=0.999)
+      # seas2 <- determineSeasonal(data=bivAR1.r$X2, sigCutoff=0.999)
+      # commonFreqInds <- which(abs(seas1$phaseAmplitudeInfo$freq-seas2$phaseAmplitudeInfo$freq)<0.01)
+      # if (length(commonFreqInds)<0) {
+      #   allSeas <- apply(X=seas1$sinusoidalData[,commonFreqInds], MARGIN=1, FUN=sum)
+      #   
+      #   spec.y1 <- multitaper::spec.mtm(
+      #     timeSeries=ts(bivAR1.r$X1-allSeas), k=K,
+      #     nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+      #     adaptiveWeighting=adaptWt, dpssIN=slepMat,
+      #     Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+      #   )
+      #   spec.y2 <- multitaper::spec.mtm(
+      #     timeSeries=ts(bivAR1.r$X2-allSeas), k=K,
+      #     nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+      #     adaptiveWeighting=adaptWt, dpssIN=slepMat,
+      #     Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+      #   )
+      # }
       
       # wieghts and eigencoefficients
       d1 <- spec.y1$mtm$eigenCoefWt
       d2 <- spec.y2$mtm$eigenCoefWt
       y1 <- spec.y1$mtm$eigenCoefs
       y2 <- spec.y2$mtm$eigenCoefs
+      
       
       if (!adaptWt) {
         d2 <- d1 <- matrix(1, nrow=dim(y1)[1], ncol=dim(y1)[2])
@@ -573,20 +630,16 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
   if (writeImgFile) { dev.off() }
   
+  localVars <- setdiff(ls(), params.init)
   
-  return(
-    list(
-      betasOverN=betasOverN,
-      result=result,
-      theo.ccv.r=theo.ccv.r, bart.ccv.r=bart.ccv.r, mtap.ccv.r=mtap.ccv.r,
-      theo.acv1.r=theo.acv1.r, bart.acv1.r=bart.acv1.r, bart.acv2.r=bart.acv2.r,
-      bart.ccv.r.avg=bart.ccv.r.avg, mtap.ccv.r.avg=mtap.ccv.r,
-      crossSpecEstY=crossSpecEstY,
-      autoSpecEstY1=autoSpecEstY1,
-      autoSpecEstY2=autoSpecEstY2,
-      d1=d1, d2=d2
-    )
+  returnExpr <- paste0("params.init=params.init.str,\n",
+                       paste0(localVars,"=",localVars, collapse=",\n")
   )
+  returnExpr <- paste0("return( list(",returnExpr, ") )")
+  # cat(paste0(returnExpr,"\n"))
+  
+  # return statement
+  eval(parse(text=returnExpr))
   
 }
 # end ar1.regr.cov
