@@ -10,6 +10,7 @@ library(mAr) # depends on MASS
 library(multitaper)
 
 source("helpers_mvSimRegr.R") # import helper functions
+source("seasonalFunctions.R")
 
 ######################## parameters for bivariate AR(1) ########################
 phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
@@ -19,10 +20,10 @@ errCovMat.p <- 1 * diag(1,2)
 
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=seq(5,5,5) * 1e3, NUM_REGR=100,
+                 numObsVec=seq(5,5,5) * 1e2, NUM_REGR=100,
                  mtmFixed="NW", W=0.005, timeBandProd=10, numTapers=19,
-                 adaptWt=TRUE, writeImgFile=FALSE, embedSines=TRUE,
-                 linDepY=FALSE, computeCorr=TRUE)
+                 adaptWt=TRUE, embedSines=TRUE,
+                 linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
 
 mean(X$betasOverN[[1]]$b1)
 mean(X$betasOverN[[1]]$b2)
@@ -41,13 +42,14 @@ X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
                  numObsVec=c(1080), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=11, numTapers=21,
-                 adaptWt=FALSE, writeImgFile=FALSE, embedSines=TRUE,
-                 linDepY=FALSE, computeCorr=TRUE)
+                 adaptWt=FALSE, embedSines=TRUE,
+                 linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
 # end AR(2)
 
+plotCIs(X)
 
 ################################## CCVF plots ##################################
-png("img/ccvf-plot.png", width=640, height=360)
+# png("img/ccvf-plot.png", width=640, height=360)
 plotLags <- seq(-50,50)
 par(mar=c(4,4,1,1))
 N <- max(X$result$N)
@@ -58,7 +60,7 @@ plot(x=plotLags, y=X$theo.ccv.r[plotLags+N], type="h", lwd=2,
 abline(h=0)
 points(x=plotLags, y=X$mtap.ccv.r.avg[plotLags+N], col="blue")
 points(x=plotLags, y=X$bart.ccv.r.avg[plotLags+N], col="red")
-dev.off()
+# dev.off()
 # end ACVF plots
 
 ################################ covariance plot ###############################

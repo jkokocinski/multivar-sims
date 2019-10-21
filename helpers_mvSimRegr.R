@@ -259,8 +259,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                         numObsVec, NUM_REGR,
                         mtmFixed="NW", timeBandProd=4, numTapers=7, W,
                         adaptWt=FALSE,
-                        writeImgFile=FALSE, embedSines=TRUE,
-                        linDepY=FALSE, computeCorr=FALSE) {
+                        embedSines=TRUE,
+                        linDepY=FALSE, computeCorr=FALSE, removeLCs=FALSE) {
   
   library(mAr) # depends on MASS
   library(multitaper)
@@ -429,25 +429,39 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       )
       
       # sinusoidal line components
-      # seas1 <- determineSeasonal(data=bivAR1.r$X1, sigCutoff=0.999)
-      # seas2 <- determineSeasonal(data=bivAR1.r$X2, sigCutoff=0.999)
-      # commonFreqInds <- which(abs(seas1$phaseAmplitudeInfo$freq-seas2$phaseAmplitudeInfo$freq)<0.01)
-      # if (length(commonFreqInds)<0) {
-      #   allSeas <- apply(X=seas1$sinusoidalData[,commonFreqInds], MARGIN=1, FUN=sum)
-      #   
-      #   spec.y1 <- multitaper::spec.mtm(
-      #     timeSeries=ts(bivAR1.r$X1-allSeas), k=K,
-      #     nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
-      #     adaptiveWeighting=adaptWt, dpssIN=slepMat,
-      #     Ftest=TRUE, returnInternals=TRUE, plot=FALSE
-      #   )
-      #   spec.y2 <- multitaper::spec.mtm(
-      #     timeSeries=ts(bivAR1.r$X2-allSeas), k=K,
-      #     nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
-      #     adaptiveWeighting=adaptWt, dpssIN=slepMat,
-      #     Ftest=TRUE, returnInternals=TRUE, plot=FALSE
-      #   )
-      # }
+      if (removeLCs) {
+        seas1 <- determineSeasonal(data=bivAR1.r$X1, sigCutoff=0.999)
+        seas2 <- determineSeasonal(data=bivAR1.r$X2, sigCutoff=0.999)
+        # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
+        #   i-th frequency indentified in seas1 is within the threshold of the
+        #   j-th frequency indentified in seas2; threshold defined by `thresh`.
+        thresh <- ifelse(mtmFixed=="NW", timeBandProd / numObs, W)
+        commonFreqIndsXY <- outer(
+          X = seas1$phaseAmplitudeInfo$freq,
+          Y = seas2$phaseAmplitudeInfo$freq,
+          FUN = function(x, y) {
+            abs(x - y) < thresh
+          }
+        )
+        commonFreqInds <- which(commonFreqIndsXY, arr.ind=TRUE)
+        if (dim(commonFreqInds)[1]>0) {
+          allSeas1 <- apply(X=as.matrix(seas1$sinusoidData[,(as.numeric(commonFreqInds[,1]))]), MARGIN=1, FUN=sum)
+          allSeas2 <- apply(X=as.matrix(seas2$sinusoidData[,(as.numeric(commonFreqInds[,2]))]), MARGIN=1, FUN=sum)
+  
+          spec.y1 <- multitaper::spec.mtm(
+            timeSeries=ts(bivAR1.r$X1-allSeas1), k=K,
+            nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+            adaptiveWeighting=adaptWt, dpssIN=slepMat,
+            Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+          )
+          spec.y2 <- multitaper::spec.mtm(
+            timeSeries=ts(bivAR1.r$X2-allSeas2), k=K,
+            nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
+            adaptiveWeighting=adaptWt, dpssIN=slepMat,
+            Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+          )
+        }
+      }
       
       # wieghts and eigencoefficients
       d1 <- spec.y1$mtm$eigenCoefWt
@@ -581,12 +595,82 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   
   
   ################################# plot results #################################
+  # plotComment <- paste0(
+  #   "Fixed ",
+  #   ifelse(mtmFixed=="NW", paste0("NW=",timeBandProd,"; K=", numTapers),
+  #            paste0("W=",W)
+  #          ), "\n",
+  #   ifelse(embedSines, "S", "No s"), "ines embedded\n",
+  #   NUM_REGR, " regressions per N",
+  #   ifelse(linDepY, "\nY2=Y1+e", "")
+  #   )
+  # 
+  # # MSE plot
+  # MSE.plotLims <- range( result[,grepl("qSE", names(result))] )
+  # if (writeImgFile) {
+  #   currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
+  #   pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
+  # }
+  # # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
+  # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+  # plot(x=result$N-5, y=result$mse.bart, xlab="Realization Size",
+  #      ylab=paste0("MSE of co",ifelse(computeCorr,"r","v"), " estimator"),
+  #      log="y", ylim=MSE.plotLims*10**c(-0.5,0.5), col="goldenrod", pch=16)
+  # points(x=result$N+5, y=result$mse.mtap, col="blue", pch=17)
+  # arrows(x0=result$N-5, y0=result$qSE.02.bart, x1=result$N-5, y1=result$qSE.98.bart,
+  #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
+  # arrows(x0=result$N+5, y0=result$qSE.02.mtap, x1=result$N+5, y1=result$qSE.98.mtap,
+  #        length=0.05, angle=90, code=3, lwd=2, col="blue")
+  # legend("topright", legend=c("Bartlett","Multitaper"), pch=c(16,17),
+  #        col=c("goldenrod","blue"))
+  # text(x=min(numObsVec), y=MSE.plotLims[1]*0.1, adj=c(0,0),
+  #      labels=plotComment, family="mono")
+  # text(x=numObsVec, y=result$qSE.02.mtap, pos=1,
+  #      labels=sprintf("%.2f", result$CI.bart/result$CI.mtap), family="mono",
+  #      col="blue")
+  # text(x=max(numObsVec), y=MSE.plotLims[1]*10**(-0.0), adj=c(1,0), family="mono",
+  #      labels="[ mtm rel. efficiency ]", col="blue")
+  # 
+  # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+  # plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
+  #      ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
+  # arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.bart,
+  #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
+  # arrows(x0=result$N-5, y0=result$var.bart/result$mse.bart, x1=result$N-5, y1=1,
+  #        length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
+  # arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.mtap,
+  #        length=0.05, angle=90, code=3, lwd=2, col="blue")
+  # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.mtap, x1=result$N+5, y1=1,
+  #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
+  # if (writeImgFile) { dev.off() }
+  
+  localVars <- setdiff(ls(), params.init)
+  
+  returnExpr <- paste0("params.init=params.init.str,\n",
+                       paste0(localVars,"=",localVars, collapse=",\n")
+  )
+  returnExpr <- paste0("return( list(",returnExpr, ") )")
+  # cat(paste0(returnExpr,"\n"))
+  
+  # return statement
+  eval(parse(text=returnExpr))
+  
+}
+# end ar1.regr.cov
+
+
+
+
+plotCIs <- function(resultList, writeImgFile=FALSE) {
+  with(resultList,
+  {
   plotComment <- paste0(
     "Fixed ",
     ifelse(mtmFixed=="NW", paste0("NW=",timeBandProd,"; K=", numTapers),
              paste0("W=",W)
            ), "\n",
-    ifelse(embedSines, "S", "No s"), "ines embedded\n",
+    ifelse(embedSines, "S", "No s"), "ines embedded",
+    ifelse(removeLCs, "; LCs not removed", ""), "\n",
     NUM_REGR, " regressions per N",
     ifelse(linDepY, "\nY2=Y1+e", "")
     )
@@ -609,7 +693,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
          length=0.05, angle=90, code=3, lwd=2, col="blue")
   legend("topright", legend=c("Bartlett","Multitaper"), pch=c(16,17),
          col=c("goldenrod","blue"))
-  text(x=min(numObsVec), y=MSE.plotLims[1]*0.1, adj=c(0,0),
+  text(x=min(numObsVec), y=par()$yaxp[1], adj=c(0,0),
        labels=plotComment, family="mono")
   text(x=numObsVec, y=result$qSE.02.mtap, pos=1,
        labels=sprintf("%.2f", result$CI.bart/result$CI.mtap), family="mono",
@@ -629,17 +713,6 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.mtap, x1=result$N+5, y1=1,
   #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
   if (writeImgFile) { dev.off() }
-  
-  localVars <- setdiff(ls(), params.init)
-  
-  returnExpr <- paste0("params.init=params.init.str,\n",
-                       paste0(localVars,"=",localVars, collapse=",\n")
+  }
   )
-  returnExpr <- paste0("return( list(",returnExpr, ") )")
-  # cat(paste0(returnExpr,"\n"))
-  
-  # return statement
-  eval(parse(text=returnExpr))
-  
 }
-# end ar1.regr.cov
