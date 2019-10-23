@@ -40,17 +40,17 @@ errCovMat.p <- 1e1 * diag(1,2)
 
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=c(1080), NUM_REGR=100,
+                 numObsVec=c(540), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=11, numTapers=21,
-                 adaptWt=FALSE, embedSines=TRUE,
-                 linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
+                 adaptWt=TRUE, embedSines=FALSE,
+                 linDepY=FALSE, computeCorr=FALSE, removeLCs=FALSE)
 # end AR(2)
 
 plotCIs(X)
 
 ################################## CCVF plots ##################################
 # png("img/ccvf-plot.png", width=640, height=360)
-plotLags <- seq(-50,50)
+plotLags <- seq(-200,200)
 par(mar=c(4,4,1,1))
 N <- max(X$result$N)
 plot(x=plotLags, y=X$theo.ccv.r[plotLags+N], type="h", lwd=2,
