@@ -290,12 +290,12 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   }
   
   betasOverN <- list() # list of data.frames for the \hat{beta}s
+  betasOverN.s.w <- betasOverN.s <- betasOverN
   
   # headings for betas
-  betas.head <- c("b1","b2","cv.bart","cv.theo","cv.mtap")
-  if (computeCorr) {
-    betas.head <- c(betas.head, c("cor.bart","cor.theo","cor.mtap"))
-  }
+  betas.head <- c("b1","b2","cv.bart","cv.theo","cv.mtap",
+                  "cor.bart","cor.theo","cor.mtap",
+                  "se.cv.bart","se.cv.mtap","se.cor.bart","se.cor.mtap")
   
   # \cov{Y_1,Y_2} from -(N-1) to +(N-1), where N is max(numObsVec); to subset
   maxmaxlag <- max(numObsVec)-1
@@ -355,22 +355,22 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       sines <- matrix(nrow=numObs, ncol=2)
       sines[,1] <- sin(2*pi/240*(1:numObs)) #+ 0.7*sin(2*pi/150*(1:numObs))
       sines[,2] <- sin(2*pi/180*(1:numObs)) #+ sin(2*pi/30*(1:numObs))
-      sines <- 4 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
+      sines <- 2 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
       
       bivAR1.p.s <- bivAR1.p + sines # embed sinusoids in predictor series
     }
     
     # Moore-Penrose inverses of the predictor realization vectors
-    mpi.X1 <- MASS::ginv(as.matrix(bivAR1.p[,1]))
-    mpi.X2 <- MASS::ginv(as.matrix(bivAR1.p[,2]))
+    mpi.X1 <- MASS::ginv(bivAR1.p[,1])
+    mpi.X2 <- MASS::ginv(bivAR1.p[,2])
     if (embedSines) {
-      mpi.X1.s <- MASS::ginv(as.matrix(bivAR1.p.s[,1]))
-      mpi.X2.s <- MASS::ginv(as.matrix(bivAR1.p.s[,2]))
+      mpi.X1.s <- MASS::ginv(bivAR1.p.s[,1])
+      mpi.X2.s <- MASS::ginv(bivAR1.p.s[,2])
     }
       
     # initialize averages of CCVF estimates
-    bart.ccv.r.s.avg <- bart.ccv.r.avg <- rep(0, 2*numObs-1)
-    mtap.ccv.r.s.avg <- mtap.ccv.r.avg <- rep(0, 2*numObs-1)
+    bart.ccv.r.avg <- rep(0, 2*numObs-1)
+    mtap.ccv.r.avg <- rep(0, 2*numObs-1)
     
     # initizalize array of response realizations
     respRlzns <- array(data=NA, dim=c(numObs, 2, NUM_REGR))
@@ -381,17 +381,19 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     for (j in 1:NUM_REGR) {
       if (linDepY) {
         y1 <- as.numeric(arima.sim(model=list(ar=phi), n=numObs, innov=rnorm(numObs, 0, sd=sqrt(varZ.Y1))))
-        bivAR1.r <- data.frame( X1=y1, X2=a*y1 + rnorm(numObs, 0, sd=sqrt(addedNoiseVar.Y2)) )
+        bivAR1.r <- rbind( y1, a*y1 + rnorm(numObs, 0, sd=sqrt(addedNoiseVar.Y2)) )
       } else {
-        bivAR1.r <- mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
+        bivAR1.r <- as.matrix(
+          mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
+        )
         # bivAR1.r <- as.matrix(bivAR1.p) %*% t(Dcoef) + MASS::mvrnorm(n=numObs, mu=rep(0,2), Sigma=errCovMat.r)
       }
       
-      respRlzns[,,j] <- as.matrix(bivAR1.r)
+      respRlzns[,,j] <- bivAR1.r
       
       if (embedSines) {
         bivAR1.r.s <- bivAR1.r + sines # embed sinusoids in response series
-        respRlzns.s[,,j] <- as.matrix(bivAR1.r.s)
+        respRlzns.s[,,j] <- bivAR1.r.s
         
         # detect & remove sinusoidal line components
         if (removeLCs) {
@@ -419,7 +421,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         } # end if(removeLCs)
       } # end if(embedSines)
       
-    }
+    } # end generate realizations
     
     ######################### do regressions and estimation ########################
     for (tp in seq(1, 1 + embedSines + removeLCs, 1)) {
@@ -434,20 +436,13 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         model1 <- lm(Y[,1] ~ 0 + bivAR1.p[,1])
         model2 <- lm(Y[,2] ~ 0 + bivAR1.p[,2])
         
-        
         # Bartlett CCVF of response series
         bart.ccv.r <- ccf(x=Y[,1], y=Y[,2], type="covariance",
                           lag.max=numObs-1, plot=FALSE)
-        # put them into a matrix (has a Toeplitz form)
-        # bart.ccv.r.mat <- matrix(nrow=numObs, ncol=numObs)
-        # bart.ccv.r.mat <- matrix(bart.ccv.r$acf[which(bart.ccv.r$lag==0) +
-        #                          row(bart.ccv.r.mat)-col(bart.ccv.r.mat)],
-        #                          numObs, numObs)
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- Bartlett-based
         covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r$acf),
                                                as.vector(t(mpi.X2)) )
-        # covB.bart <- mpi.X1 %*% bart.ccv.r.mat %*% t(mpi.X2) # brute force
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- theoretical-based
         covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
@@ -494,7 +489,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         covB.mtap <- mpi.X1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2)) )
         # covB.mtap <- mpi.X1 %*% mtap.ccv.r.mat %*% t(mpi.X2)
         
-        if (computeCorr) {
+        if (TRUE) {
           # Bartlett ACVFs for responses; for use in calculating corr
           bart.acv1.r <- acf(x=Y[,1], type="covariance", lag.max=numObs-1,
                              plot=FALSE)
@@ -516,8 +511,6 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
             apply(d1*d1, MARGIN=1, FUN=sum)
           autoSpecEstY2 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
             apply(d2*d2, MARGIN=1, FUN=sum)
-          # autoSpecEstY1 <- (Y1mtx * Conj(Y1mtx)) %*% rep(1,K)/K
-          # autoSpecEstY2 <- (Y2mtx * Conj(Y2mtx)) %*% rep(1,K)/K
           
           # autospectra over full [0,1) interval
           autoSpecEstY1 <- c(autoSpecEstY1, rev(Conj(autoSpecEstY1[-1]))[-1])
@@ -538,120 +531,129 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         betas.newRow <- c(as.numeric(model1$coefficients),
                           as.numeric(model2$coefficients),
                           covB.bart, covB.theo, covB.mtap)
-        if (computeCorr) {
-          betas.newRow <- c(betas.newRow, c(corB.bart, corB.theo, corB.mtap))
-        }
+        betas.newRow <- c(betas.newRow, c(corB.bart, corB.theo, corB.mtap),
+                          rep(NA,4))
         betas[j,] <- betas.newRow
-                       
-        # betas.s[j,] <- c(as.numeric(model1.s$coefficients),
-        #                  as.numeric(model2.s$coefficients),
-        #                  covB.bart.s, covB.theo.s)
         
+        # CCVF estimate averages (without dividing by NUM_REGR yet)
         bart.ccv.r.avg <- bart.ccv.r.avg + bart.ccv.r$acf
         mtap.ccv.r.avg <- mtap.ccv.r.avg + mtap.ccv.r
-      } # end for (NUM_REGR)
+        
+        
+      } # end for (j in 1:NUM_REGR)
     
       # FIX STUFF AROUND HERE....................
       bart.ccv.r.avg <- bart.ccv.r.avg / NUM_REGR
       mtap.ccv.r.avg <- mtap.ccv.r.avg / NUM_REGR
       
-      if (!computeCorr) {
-        betas$se.bart <- (with(betas, {cv.theo-cv.bart}))**2
-        betas$se.mtap <- (with(betas, {cv.theo-cv.mtap}))**2
+      betas$se.cv.bart <- (with(betas, {cv.theo-cv.bart}))**2
+      betas$se.cv.mtap <- (with(betas, {cv.theo-cv.mtap}))**2
+      betas$se.cor.bart <- (with(betas, {cor.theo-cor.bart}))**2
+      betas$se.cor.mtap <- (with(betas, {cor.theo-cor.mtap}))**2
+      
+      # update the list of dfs
+      if (tp==1) {
+        betasOverN[[n]] <- betas
+        
+        bart.ccv.r.ave <- bart.ccv.r.avg
+        mtap.ccv.r.ave <- mtap.ccv.r.avg
+        crossSpec <- crossSpecEstY
+      } else if (tp==2) {
+        betasOverN.s[[n]] <- betas
+        
+        bart.ccv.r.s.ave <- bart.ccv.r.avg
+        mtap.ccv.r.s.ave <- mtap.ccv.r.avg
+        crossSpec.s <- crossSpecEstY
+      } else if (tp==3) {
+        betasOverN.s.w[[n]] <- betas
+        
+        bart.ccv.r.s.w.ave <- bart.ccv.r.avg
+        mtap.ccv.r.s.w.ave <- mtap.ccv.r.avg
+        crossSpec.s.w <- crossSpecEstY
       } else {
-        betas$se.bart <- (with(betas, {cor.theo-cor.bart}))**2
-        betas$se.mtap <- (with(betas, {cor.theo-cor.mtap}))**2
+        stop("impossible tp")
       }
       
-      betasOverN[[n]] <- betas # update the list of dfs
-    }
+    } # end for (tp)
     cat(paste0("########   end : ",Sys.time()),"\n")
-  } # end for loop over n in numObsVec
+  } # end for (n in seq(1,length(numObsVec)))
   
   
   
   #################################### results ###################################
   # produce result df with MSEs, etc.
-  result <- data.frame(N=numObsVec)
-  for (k in seq(1,length(betasOverN))) {
-    # betasOverN[[k]][,"mse.bart"] <- ( betasOverN[[k]][,"cv.theo"] - betasOverN[[k]][,"cv.bart"] )**2
-    # betasOverN[[k]][,"mse.mtap"] <- ( betasOverN[[k]][,"cv.theo"] - betasOverN[[k]][,"cv.mtap"] )**2
-    dfObj <- betasOverN[[k]]
-    result[k,c("mse.bart","mse.mtap")] <- apply(X=dfObj[,c("se.bart","se.mtap")],MARGIN=2,FUN=mean)
+  for (tp in seq(1, 1 + embedSines + removeLCs, 1)) {
+    result <- data.frame(N=numObsVec)
     
-    if (!computeCorr) {
-      result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("cv.bart","cv.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
+    if (tp==1) {
+      dfObjList <- betasOverN
+    } else if (tp==2) {
+      dfObjList <- betasOverN.s
+    } else if (tp==3) {
+      dfObjList <- betasOverN.s.w
     } else {
-      result[k,c("var.bart","var.mtap")] <- apply(X=dfObj[,c("cor.bart","cor.mtap")],MARGIN=2,FUN=var) * (result$N[k]-1)/result$N[k]
+      stop("impossible tp")
     }
+    
+    for (k in seq(1,length(betasOverN))) {
+      dfObj <- dfObjList[[k]]
       
-    result[k,c("sqbias.bart","sqbias.mtap")] <- result[k,c("mse.bart","mse.mtap")]-result[k,c("var.bart","var.mtap")]
+      # estimated MSEs of the cov & cor estimates
+      result[k,c("mse.cv.bart","mse.cv.mtap")] <-
+        apply(X=dfObj[,c("se.cv.bart","se.cv.mtap")],MARGIN=2,FUN=mean)
+      result[k,c("mse.cor.bart","mse.cor.mtap")] <-
+        apply(X=dfObj[,c("se.cor.bart","se.cor.mtap")],MARGIN=2,FUN=mean)
+      
+      # estimated variances of the cov & cor estimates
+      result[k, c("var.cv.bart", "var.cv.mtap")] <-
+        apply(X=dfObj[,c("cv.bart","cv.mtap")], MARGIN=2, FUN=var) *
+        (result$N[k]-1) / result$N[k]
+      result[k,c("var.cor.bart","var.cor.mtap")] <-
+        apply(X=dfObj[,c("cor.bart","cor.mtap")],MARGIN=2,FUN=var) *
+        (result$N[k]-1)/result$N[k]
+      
+      # estimated squared bias of the cov & cor estimates; MSE subtract var
+      result[k,c("sqbias.cv.bart","sqbias.cv.mtap")] <-
+        result[k,c("mse.cv.bart","mse.cv.mtap")] -
+        result[k,c("var.cv.bart","var.cv.mtap")]
+      result[k,c("sqbias.cor.bart","sqbias.cor.mtap")] <-
+        result[k,c("mse.cor.bart","mse.cor.mtap")] -
+        result[k,c("var.cor.bart","var.cor.mtap")]
+      
+      # sample quantiles for the squared errors; approximate CIs
+      lp <- 0.02; up <- 0.98 # lower and upper probs.
+      qSE.cv <- apply(X=dfObj[,c("se.cv.bart","se.cv.mtap")], MARGIN=2,
+                      FUN=quantile, c(up,lp))
+      result[k,c("qSE.U.cov.bart","qSE.U.cov.mtap")] <- qSE.cv[1,]
+      result[k,c("qSE.L.cov.bart","qSE.L.cov.mtap")] <- qSE.cv[2,]
+      qSE.cor <- apply(X=dfObj[,c("se.cor.bart","se.cor.mtap")], MARGIN=2,
+                       FUN=quantile, c(up,lp))
+      result[k,c("qSE.U.cor.bart","qSE.U.cor.mtap")] <- qSE.cor[1,]
+      result[k,c("qSE.L.cor.bart","qSE.L.cor.mtap")] <- qSE.cor[2,]
+      
+      result[k,"smpl.cov"] <- cov(x=dfObj$b1, y=dfObj$b2)
+      result[k,"smpl.cor"] <- cor(x=dfObj$b1, y=dfObj$b2)
+    }
     
-    qSE <- apply(X=dfObj[,c("se.bart","se.mtap")], MARGIN=2, FUN=quantile, c(0.98,0.02)) # quantiles for approximate CIs
-    result[k,c("qSE.98.bart","qSE.98.mtap")] <- qSE[1,]
-    result[k,c("qSE.02.bart","qSE.02.mtap")] <- qSE[2,]
+    result$CI.cov.bart <- result$qSE.U.cov.bart-result$qSE.L.cov.bart
+    result$CI.cov.mtap <- result$qSE.U.cov.mtap-result$qSE.L.cov.mtap
     
-    result[k,"smpl.cov"] <- cov(x=dfObj$b1, y=dfObj$b2)
-    result[k,"smpl.cor"] <- cor(x=dfObj$b1, y=dfObj$b2)
+    if (tp==1) {
+      bhCovCIs <- result
+    } else if (tp==2) {
+      bhCovCIs.s <- result
+    } else if (tp==3) {
+      bhCovCIs.s.w <- result
+    } else {
+      stop("impossible tp")
+    }
   }
+  rm(result, betas,betas.head, betas.newRow)
+  rm(list=ls()[which(grepl("bivAR1", ls()))])
   
-  result$CI.bart <- result$qSE.98.bart-result$qSE.02.bart
-  result$CI.mtap <- result$qSE.98.mtap-result$qSE.02.mtap
+  localVars <- setdiff(ls(), names(params.init))
   
-  
-  ################################# plot results #################################
-  # plotComment <- paste0(
-  #   "Fixed ",
-  #   ifelse(mtmFixed=="NW", paste0("NW=",timeBandProd,"; K=", numTapers),
-  #            paste0("W=",W)
-  #          ), "\n",
-  #   ifelse(embedSines, "S", "No s"), "ines embedded\n",
-  #   NUM_REGR, " regressions per N",
-  #   ifelse(linDepY, "\nY2=Y1+e", "")
-  #   )
-  # 
-  # # MSE plot
-  # MSE.plotLims <- range( result[,grepl("qSE", names(result))] )
-  # if (writeImgFile) {
-  #   currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
-  #   pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
-  # }
-  # # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
-  # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-  # plot(x=result$N-5, y=result$mse.bart, xlab="Realization Size",
-  #      ylab=paste0("MSE of co",ifelse(computeCorr,"r","v"), " estimator"),
-  #      log="y", ylim=MSE.plotLims*10**c(-0.5,0.5), col="goldenrod", pch=16)
-  # points(x=result$N+5, y=result$mse.mtap, col="blue", pch=17)
-  # arrows(x0=result$N-5, y0=result$qSE.02.bart, x1=result$N-5, y1=result$qSE.98.bart,
-  #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-  # arrows(x0=result$N+5, y0=result$qSE.02.mtap, x1=result$N+5, y1=result$qSE.98.mtap,
-  #        length=0.05, angle=90, code=3, lwd=2, col="blue")
-  # legend("topright", legend=c("Bartlett","Multitaper"), pch=c(16,17),
-  #        col=c("goldenrod","blue"))
-  # text(x=min(numObsVec), y=MSE.plotLims[1]*0.1, adj=c(0,0),
-  #      labels=plotComment, family="mono")
-  # text(x=numObsVec, y=result$qSE.02.mtap, pos=1,
-  #      labels=sprintf("%.2f", result$CI.bart/result$CI.mtap), family="mono",
-  #      col="blue")
-  # text(x=max(numObsVec), y=MSE.plotLims[1]*10**(-0.0), adj=c(1,0), family="mono",
-  #      labels="[ mtm rel. efficiency ]", col="blue")
-  # 
-  # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-  # plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
-  #      ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
-  # arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.bart,
-  #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-  # arrows(x0=result$N-5, y0=result$var.bart/result$mse.bart, x1=result$N-5, y1=1,
-  #        length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
-  # arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.mtap,
-  #        length=0.05, angle=90, code=3, lwd=2, col="blue")
-  # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.mtap, x1=result$N+5, y1=1,
-  #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
-  # if (writeImgFile) { dev.off() }
-  
-  localVars <- setdiff(ls(), params.init)
-  
-  returnExpr <- paste0("params.init=params.init.str,\n",
+  returnExpr <- paste0("params.init=params.init,\n",
                        paste0(localVars,"=",localVars, collapse=",\n")
   )
   returnExpr <- paste0("return( list(",returnExpr, ") )")
@@ -666,58 +668,69 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
 
 
 
-plotCIs <- function(resultList, writeImgFile=FALSE) {
+plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
   with(resultList,
-  {
-  plotComment <- paste0(
-    "Fixed ",
-    ifelse(mtmFixed=="NW", paste0("NW=",timeBandProd,"; K=", numTapers),
-             paste0("W=",W)
-           ), "\n",
-    ifelse(embedSines, "S", "No s"), "ines embedded",
-    ifelse(removeLCs, "; LCs not removed", ""), "\n",
-    NUM_REGR, " regressions per N",
-    ifelse(linDepY, "\nY2=Y1+e", "")
-    )
-  
-  # MSE plot
-  MSE.plotLims <- range( result[,grepl("qSE", names(result))] )
-  if (writeImgFile) {
-    currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
-    pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
-  }
-  # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
-  par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-  plot(x=result$N-5, y=result$mse.bart, xlab="Realization Size",
-       ylab=paste0("MSE of co",ifelse(computeCorr,"r","v"), " estimator"),
-       log="y", ylim=MSE.plotLims*10**c(-0.5,0.5), col="goldenrod", pch=16)
-  points(x=result$N+5, y=result$mse.mtap, col="blue", pch=17)
-  arrows(x0=result$N-5, y0=result$qSE.02.bart, x1=result$N-5, y1=result$qSE.98.bart,
-         length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-  arrows(x0=result$N+5, y0=result$qSE.02.mtap, x1=result$N+5, y1=result$qSE.98.mtap,
-         length=0.05, angle=90, code=3, lwd=2, col="blue")
-  legend("topright", legend=c("Bartlett","Multitaper"), pch=c(16,17),
-         col=c("goldenrod","blue"))
-  text(x=min(numObsVec), y=par()$yaxp[1], adj=c(0,0),
-       labels=plotComment, family="mono")
-  text(x=numObsVec, y=result$qSE.02.mtap, pos=1,
-       labels=sprintf("%.2f", result$CI.bart/result$CI.mtap), family="mono",
-       col="blue")
-  text(x=max(numObsVec), y=MSE.plotLims[1]*10**(-0.0), adj=c(1,0), family="mono",
-       labels="[ mtm rel. efficiency ]", col="blue")
-  
-  # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-  # plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
-  #      ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
-  # arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.bart,
-  #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-  # arrows(x0=result$N-5, y0=result$var.bart/result$mse.bart, x1=result$N-5, y1=1,
-  #        length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
-  # arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.mtap,
-  #        length=0.05, angle=90, code=3, lwd=2, col="blue")
-  # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.mtap, x1=result$N+5, y1=1,
-  #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
-  if (writeImgFile) { dev.off() }
-  }
+    {
+      if (stage=="") {
+        result <- bhCovCIs
+      } else if (stage=="s") {
+        result <- bhCovCIs.s
+      } else if (stage=="s.w") {
+        result <- bhCovCIs.s.w
+      } else {
+        stop("Set a valid `stage`.")
+      }
+        
+      # plotComment <- paste0(
+      #   "Fixed ",
+      #   ifelse(mtmFixed=="NW", paste0("NW=",timeBandProd,"; K=", numTapers),
+      #            paste0("W=",W)
+      #          ), "\n",
+      #   ifelse(embedSines, "S", "No s"), "ines embedded",
+      #   ifelse(removeLCs, "; LCs not removed", ""), "\n",
+      #   NUM_REGR, " regressions per N",
+      #   ifelse(linDepY, "\nY2=Y1+e", "")
+      #   )
+      
+      # MSE plot
+      MSE.plotLims <- range(
+        result[,(grepl("qSE", names(result)) & grepl(type, names(result)))]
+      )
+      if (writeImgFile) {
+        currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
+        pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
+      }
+      # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
+      par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+      plot(x=result$N-5, y=result$mse.cv.bart, xlab="Realization Size",
+           ylab=paste0("MSE of co",ifelse(type=="cov","v","r"), " estimator"),
+           log="y", ylim=MSE.plotLims*10**c(-0.5,0.5), col="goldenrod", pch=16)
+      points(x=result$N+5, y=result$mse.cv.mtap, col="blue", pch=17)
+      arrows(x0=result$N-5, y0=result$qSE.L.cov.bart, x1=result$N-5, y1=result$qSE.U.cov.bart,
+             length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
+      arrows(x0=result$N+5, y0=result$qSE.L.cov.mtap, x1=result$N+5, y1=result$qSE.U.cov.mtap,
+             length=0.05, angle=90, code=3, lwd=2, col="blue")
+      legend("topright", legend=c("Bartlett","Multitaper"), pch=c(16,17),
+             col=c("goldenrod","blue"))
+      # text(x=min(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0),
+      #      labels=plotComment, family="mono")
+      text(x=params.init$numObsVec, y=result$qSE.L.cov.mtap, pos=1, family="mono", col="blue",
+           labels=sprintf("%.2f", result$CI.cov.bart/result$CI.cov.mtap))
+      text(x=max(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0), family="mono",
+           labels="[ mtm rel. efficiency ]", col="blue")
+      
+      # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+      # plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
+      #      ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
+      # arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.cv.bart,
+      #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
+      # arrows(x0=result$N-5, y0=result$var.bart/result$mse.cv.bart, x1=result$N-5, y1=1,
+      #        length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
+      # arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.cv.mtap,
+      #        length=0.05, angle=90, code=3, lwd=2, col="blue")
+      # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.cv.mtap, x1=result$N+5, y1=1,
+      #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
+      if (writeImgFile) { dev.off() }
+    }
   )
 }
