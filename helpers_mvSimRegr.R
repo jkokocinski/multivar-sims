@@ -348,16 +348,11 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # betas.s <- betas
     
     # predictor series (X_1,X_2) realization
-    bivAR1.p <- mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs)
+    bivAR1.p <- as.matrix(mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs))
     
     if (embedSines) {
-      # generate sinusoids
-      sines <- matrix(nrow=numObs, ncol=2)
-      sines[,1] <- sin(2*pi/240*(1:numObs)) #+ 0.7*sin(2*pi/150*(1:numObs))
-      sines[,2] <- sin(2*pi/180*(1:numObs)) #+ sin(2*pi/30*(1:numObs))
-      sines <- 2 * sines %*% diag(diag(errCovMat.r)) # scale by resp. variances
-      
-      bivAR1.p.s <- bivAR1.p + sines # embed sinusoids in predictor series
+      bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=c(240,180)**(-1),
+                                   amps=diag(errCovMat.r), ampScale=2)
     }
     
     # Moore-Penrose inverses of the predictor realization vectors
@@ -366,6 +361,11 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     if (embedSines) {
       mpi.X1.s <- MASS::ginv(bivAR1.p.s[,1])
       mpi.X2.s <- MASS::ginv(bivAR1.p.s[,2])
+      
+      if (removeLCs) { # deterministic component estimation
+        seas.x1 <- determineSeasonal(data=bivAR1.p.s[,1], sigCutoff=0.999)
+        seas.x2 <- determineSeasonal(data=bivAR1.p.s[,2], sigCutoff=0.999)
+      }
     }
       
     # initialize averages of CCVF estimates
@@ -392,42 +392,33 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       respRlzns[,,j] <- bivAR1.r
       
       if (embedSines) {
-        bivAR1.r.s <- bivAR1.r + sines # embed sinusoids in response series
+        bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=c(240,180)**(-1),
+                                     amps=diag(errCovMat.r), ampScale=2)
         respRlzns.s[,,j] <- bivAR1.r.s
         
         # detect & remove sinusoidal line components
         if (removeLCs) {
-          seas1 <- determineSeasonal(data=bivAR1.r.s[,1], sigCutoff=0.999)
-          seas2 <- determineSeasonal(data=bivAR1.r.s[,2], sigCutoff=0.999)
-          # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
-          #   i-th frequency indentified in seas1 is within the threshold of the
-          #   j-th frequency indentified in seas2; threshold defined by `thresh`.
-          thresh <- ifelse(mtmFixed=="NW", timeBandProd / numObs, W)
-          commonFreqIndsXY <- outer(
-            X = seas1$phaseAmplitudeInfo$freq,
-            Y = seas2$phaseAmplitudeInfo$freq,
-            FUN = function(x, y) {
-              abs(x-y) < thresh
-            }
-          )
-          commonFreqInds <- which(commonFreqIndsXY, arr.ind=TRUE)
-          if (dim(commonFreqInds)[1]>0) {
-            allSeas1 <- apply(X=as.matrix(seas1$sinusoidData[,(as.numeric(commonFreqInds[,1]))]), MARGIN=1, FUN=sum)
-            allSeas2 <- apply(X=as.matrix(seas2$sinusoidData[,(as.numeric(commonFreqInds[,2]))]), MARGIN=1, FUN=sum)
-            respRlzns.s.w[,,j] <- bivAR1.r.s - c(allSeas1, allSeas2)
-          } else {
-            cat("No line components detected.\n")
+          for (p in 1:2) {
+            commonSines <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
+              freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
+              sigCutoff=0.999)
+            detRespSines <- commonSines[,2]
+            
+            respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - detRespSines
           }
+          
         } # end if(removeLCs)
       } # end if(embedSines)
-      
     } # end generate realizations
+  
+  
+  
     
     ######################### do regressions and estimation ########################
     for (tp in seq(1, 1 + embedSines + removeLCs, 1)) {
       if (tp==1) { Yarr <- respRlzns }
       else if (tp==2) { Yarr <- respRlzns.s }
-      else if (tp==3) { Yarr <- respRlzns.s.w }
+      else if (tp==3) { Yarr <- respRlzns.s }
       else { stop("impossible tp") }
       
       for (j in 1:NUM_REGR) {
@@ -448,15 +439,20 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
         
         
+        if (tp==3) {
+          YforSpec <- respRlzns.s.w[,,j]
+        } else {
+          YforSpec <- Y
+        }
         # compute spec.mtm objects for both response series components
         spec.y1 <- multitaper::spec.mtm(
-          timeSeries=ts(Y[,1]), k=K,
+          timeSeries=ts(YforSpec[,1]), k=K,
           nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
           adaptiveWeighting=adaptWt, dpssIN=slepMat,
           Ftest=TRUE, returnInternals=TRUE, plot=FALSE
         )
         spec.y2 <- multitaper::spec.mtm(
-          timeSeries=ts(Y[,2]), k=K,
+          timeSeries=ts(YforSpec[,2]), k=K,
           nw=ifelse(mtmFixed=="NW", timeBandProd, 2*numObs*W),
           adaptiveWeighting=adaptWt, dpssIN=slepMat,
           Ftest=TRUE, returnInternals=TRUE, plot=FALSE
@@ -719,18 +715,53 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
       text(x=max(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0), family="mono",
            labels="[ mtm rel. efficiency ]", col="blue")
       
-      # par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-      # plot(x=result$N, y=rep(1,dim(result)[1]), xlab="Realization Size",
-      #      ylab="Var. | Sq. Bias", ylim=c(0,1), col="white")
-      # arrows(x0=result$N-5, y0=0, x1=result$N-5, y1=result$var.bart/result$mse.cv.bart,
-      #        length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-      # arrows(x0=result$N-5, y0=result$var.bart/result$mse.cv.bart, x1=result$N-5, y1=1,
-      #        length=0.05, angle=90, code=3, lwd=2, col="darkgoldenrod")
-      # arrows(x0=result$N+5, y0=0, x1=result$N+5, y1=result$var.mtap/result$mse.cv.mtap,
-      #        length=0.05, angle=90, code=3, lwd=2, col="blue")
-      # arrows(x0=result$N+5, y0=result$var.mtap/result$mse.cv.mtap, x1=result$N+5, y1=1,
-      #        length=0.05, angle=90, code=3, lwd=2, col="darkblue")
       if (writeImgFile) { dev.off() }
     }
   )
 }
+
+
+
+embedSinusoids <- function(input, freqs, amps, ampScale) {
+  stopifnot(class(input)=="matrix")
+  stopifnot(dim(input)[2]==2, length(freqs)==2, length(amps)==2)
+  
+  numObs <- dim(input)[1]
+  
+  sines <- matrix(nrow=dim(input)[1], ncol=2)
+  sines[,1] <- sin(2*pi*freqs[1]*(1:numObs))
+  sines[,2] <- sin(2*pi*freqs[2]*(1:numObs))
+  sines <- ampScale * sines %*% diag(amps)
+  
+  return(input + sines)
+}
+
+
+findCommonSines <- function(x, y, freqThresh, sigCutoff) {
+  stopifnot(length(x)==length(y))
+  
+  seas.x <- determineSeasonal(data=x, sigCutoff=sigCutoff)
+  seas.y <- determineSeasonal(data=y, sigCutoff=sigCutoff)
+  # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
+  #   i-th frequency indentified in seas1 is within the threshold of the
+  #   j-th frequency indentified in seas2; threshold defined by `thresh`.
+  commonFreqIndsXY <- outer(
+    X = seas.x$phaseAmplitudeInfo$freq,
+    Y = seas.y$phaseAmplitudeInfo$freq,
+    FUN = function(x, y, thresh=freqThresh) {
+      abs(x-y) < thresh
+    }
+  )
+  commonFreqInds <- which(commonFreqIndsXY, arr.ind=TRUE)
+  if (dim(commonFreqInds)[1]>0) {
+    allSeas.x <- apply(X=as.matrix(seas.x$sinusoidData[,(as.numeric(commonFreqInds[,1]))]),
+                       MARGIN=1, FUN=sum)
+    allSeas.y <- apply(X=as.matrix(seas.y$sinusoidData[,(as.numeric(commonFreqInds[,2]))]),
+                       MARGIN=1, FUN=sum)
+    return( matrix(c(allSeas.x, allSeas.y), ncol=2) )
+  } else {
+    return( matrix(0, length(x), 2) )
+  }
+}
+
+
