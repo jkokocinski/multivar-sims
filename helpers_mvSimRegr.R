@@ -362,10 +362,10 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       mpi.X1.s <- MASS::ginv(bivAR1.p.s[,1])
       mpi.X2.s <- MASS::ginv(bivAR1.p.s[,2])
       
-      if (removeLCs) { # deterministic component estimation
-        seas.x1 <- determineSeasonal(data=bivAR1.p.s[,1], sigCutoff=0.999)
-        seas.x2 <- determineSeasonal(data=bivAR1.p.s[,2], sigCutoff=0.999)
-      }
+      # if (removeLCs) { # deterministic component estimation
+      #   seas.x1 <- determineSeasonal(data=bivAR1.p.s[,1], sigCutoff=0.999)
+      #   seas.x2 <- determineSeasonal(data=bivAR1.p.s[,2], sigCutoff=0.999)
+      # }
     }
       
     # initialize averages of CCVF estimates
@@ -377,7 +377,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     respRlzns.s.w <- respRlzns.s <- respRlzns # .s sines embedded; .s.w whitened
     
     ############################# generate realizations ############################
-    cat(paste0("######## start : ",Sys.time()),"\n")
+    cat(paste0("# ", Sys.time()) ," | generating realizations...\n")
     for (j in 1:NUM_REGR) {
       if (linDepY) {
         y1 <- as.numeric(arima.sim(model=list(ar=phi), n=numObs, innov=rnorm(numObs, 0, sd=sqrt(varZ.Y1))))
@@ -410,11 +410,13 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         } # end if(removeLCs)
       } # end if(embedSines)
     } # end generate realizations
+    cat(paste0("# ", Sys.time()) ," | done!\n")
   
   
   
     
     ######################### do regressions and estimation ########################
+    cat(paste0("# ", Sys.time()) ," | doing regressions and estimation...\n")
     for (tp in seq(1, 1 + embedSines + removeLCs, 1)) {
       if (tp==1) { Yarr <- respRlzns }
       else if (tp==2) { Yarr <- respRlzns.s }
@@ -571,7 +573,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       }
       
     } # end for (tp)
-    cat(paste0("########   end : ",Sys.time()),"\n")
+    cat(paste0("# ", Sys.time()) ," | done!\n")
   } # end for (n in seq(1,length(numObsVec)))
   
   
@@ -740,8 +742,17 @@ embedSinusoids <- function(input, freqs, amps, ampScale) {
 findCommonSines <- function(x, y, freqThresh, sigCutoff) {
   stopifnot(length(x)==length(y))
   
-  seas.x <- determineSeasonal(data=x, sigCutoff=sigCutoff)
-  seas.y <- determineSeasonal(data=y, sigCutoff=sigCutoff)
+  suppressWarnings(
+    {
+      seas.x <- determineSeasonal(data=x, sigCutoff=sigCutoff)
+      seas.y <- determineSeasonal(data=y, sigCutoff=sigCutoff)
+    }
+  )
+  
+  if (is.null(seas.x) | is.null(seas.y)) {
+    return(matrix(0, length(x), 2))
+  }
+  
   # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
   #   i-th frequency indentified in seas1 is within the threshold of the
   #   j-th frequency indentified in seas2; threshold defined by `thresh`.
@@ -762,6 +773,40 @@ findCommonSines <- function(x, y, freqThresh, sigCutoff) {
   } else {
     return( matrix(0, length(x), 2) )
   }
-}
+} # end findCommonSines
+
+
+
+plotCCVF <- function(resultList, plotLags, stage="") {
+  if (stage=="") {
+    suffix <- ""
+  } else if (stage=="s") {
+    suffix <- ".s"
+  } else if (stage=="s.w") {
+    suffix <- ".s.w"
+  } else {
+    stop("Set a valid `stage`.")
+  }
+  par(mar=c(4,4,1,1))
+  plotText <- 
+    "with(resultList,
+       {
+         N <- max(bhCovCIs$N)
+         plot(x=plotLags, y=theo.ccv.r[plotLags+N], type=\"h\", lwd=2,
+              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.ave[plotLags+N],
+                            bart.ccv.r.ave[plotLags+N]) ),
+              ylab=\"CCVF (Y1,Y2)\", xlab=\"Lag\")
+         abline(h=0)
+         points(x=plotLags, y=mtap.ccv.r.ave[plotLags+N], col=\"blue\")
+         points(x=plotLags, y=bart.ccv.r.ave[plotLags+N], col=\"red\")
+       }
+  )"
+  
+  plotText <- gsub("bhCovCIs", paste0("bhCovCIs", suffix), plotText)
+  plotText <- gsub("bart.ccv.r", paste0("bart.ccv.r",suffix), plotText)
+  plotText <- gsub("mtap.ccv.r", paste0("mtap.ccv.r",suffix), plotText)
+  
+  eval(parse(text=plotText))
+} # end plotCCVF
 
 

@@ -33,39 +33,42 @@ X$result
 
 
 ######################## parameters for bivariate AR(2) ########################
-phiMat.r <- matrix(c(0.88,0.1,-0.75,0.3,0.1,0.66,0.1,-0.5), nrow=2, ncol=4, byrow=TRUE)
+phiMat.r <- matrix(c(0.99,0.1,-0.95,0.3,0.1,0.88,0.1,-0.5), nrow=2, ncol=4, byrow=TRUE)
 phiMat.p <- matrix(c(0.8,0,-0.7,0,0,0.5,0,-0.3), nrow=2, ncol=4, byrow=TRUE)
 errCovMat.r <- 1e1 * (diag(c(1,1), 2,2) + matrix(c(0,0.00,0.00,0), 2, 2))
 errCovMat.p <- 1e1 * diag(1,2)
 
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=c(540), NUM_REGR=100,
+                 numObsVec=c(366), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=6, numTapers=11,
                  adaptWt=TRUE, embedSines=TRUE,
                  linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
 # end AR(2)
 
-plotCIs(X, stage="")
-plotCIs(X, stage="s")
-plotCIs(X, stage="s.w")
+plotCIs(X, stage="", writeImgFile=F)
+plotCIs(X, stage="s", writeImgFile=F)
+plotCIs(X, stage="s.w", writeImgFile=F)
 
 ################################## CCVF plots ##################################
 # png("img/ccvf-plot.png", width=640, height=360)
-plotLags <- seq(-20,20)
-par(mar=c(4,4,1,1))
-with(X,
-  {
-  N <- max(bhCovCIs.s$N)
-  plot(x=plotLags, y=theo.ccv.r[plotLags+N], type="h", lwd=2,
-       ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.s.ave[plotLags+N],
-                     bart.ccv.r.s.ave[plotLags+N]) ),
-       ylab="CCVF (Y1,Y2)", xlab="Lag")
-  abline(h=0)
-  points(x=plotLags, y=mtap.ccv.r.s.ave[plotLags+N], col="blue")
-  points(x=plotLags, y=bart.ccv.r.s.ave[plotLags+N], col="red")
-  }
-)
+plotCCVF(resultList=X, plotLags=seq(-50,50), stage="")
+plotCCVF(resultList=X, plotLags=seq(-50,50), stage="s")
+plotCCVF(resultList=X, plotLags=seq(-50,50), stage="s.w")
+# plotLags <- seq(-20,20)
+# par(mar=c(4,4,1,1))
+# with(X,
+#   {
+#   N <- max(bhCovCIs$N)
+#   plot(x=plotLags, y=theo.ccv.r[plotLags+N], type="h", lwd=2,
+#        ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.ave[plotLags+N],
+#                      bart.ccv.r.ave[plotLags+N]) ),
+#        ylab="CCVF (Y1,Y2)", xlab="Lag")
+#   abline(h=0)
+#   points(x=plotLags, y=mtap.ccv.r.ave[plotLags+N], col="blue")
+#   points(x=plotLags, y=bart.ccv.r.ave[plotLags+N], col="red")
+#   }
+# )
 # dev.off()
 # end ACVF plots
 
@@ -107,7 +110,7 @@ phiMat.r <- rbind(
   )
 phiMat.p <- cbind(diag(c(0.8,0.5)), diag(c(-0.7,-0.3)), diag(c(0.5,0.5)))
 errCovMat.r <- matrix(c(143195,1631,1631,932), 2, 2)
-errCovMat.p <- 1 * diag(1,2)
+errCovMat.p <- 1e4 * diag(1,2)
 
 
 
