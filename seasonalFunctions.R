@@ -40,8 +40,8 @@ determineSeasonal <- function(data, sigCutoff, deltat=1, predictNum = 0){
     
     inv <- fft(blank,inverse=TRUE)
     sines[, i] <- Re(inv[1:N])
-    phseAmp[i,(1:3)] <- c(spec$freq[f.index],
-                          fitSinusoidSingle(sines[,i], 1, f=spec$freq[f.index]))
+    # phseAmp[i,(1:3)] <- c(spec$freq[f.index],
+    #                       fitSinusoidSingle(sines[,i], 1, f=spec$freq[f.index]))
     # phseAmp[i, (4:5)] <- c( 2 * Mod(cmv[f.index]),
     #                        atan2(Im(cmv[f.index]), Re(cmv[f.index])) )
     

@@ -7,7 +7,9 @@ tryCatch(setwd("~/multivar-sims"),
 )
 
 require(multitaper)
+require(signal)
 
+############################ import data and format ############################
 importData <- function(prefix, seqInds, suffix="", filext, skip=0) {
   theData <- data.frame()
   
@@ -39,21 +41,24 @@ remove(demand, hoep) # clean up
 iesoData$hoep <- gsub(",", "", iesoData$hoep) # remove thousands separator
 iesoData$hoep <- as.numeric(iesoData$hoep)
 
+
+################################# plot the data ################################
 plot(x=iesoData$datetime, y=iesoData$demand, type="l")
 plot(x=iesoData$datetime, y=iesoData$hoep, type="l")
 
-multitaper::spec.mtm(ts(iesoData$hoep))
 
+######################## compute auto- and cross-spectra #######################
+multitaper::spec.mtm(ts(iesoData$demand))
 
 # compute spec.mtm objects for both response series components
 spec.y1 <- multitaper::spec.mtm(
-  timeSeries=ts(iesoData$demand), k=6,
+  timeSeries=ts(iesoData$demand[1:8760]), k=6,
   nw=11,
   adaptiveWeighting=TRUE,
   Ftest=TRUE, returnInternals=TRUE, plot=FALSE
 )
 spec.y2 <- multitaper::spec.mtm(
-  timeSeries=ts(iesoData$hoep), k=6,
+  timeSeries=ts(iesoData$demand[8761:17520]), k=6,
   nw=11,
   adaptiveWeighting=TRUE,
   Ftest=TRUE, returnInternals=TRUE, plot=FALSE
@@ -71,5 +76,22 @@ crossSpecEstY <- apply(d1*y1*d2*Conj(y2), MARGIN=1, FUN=sum) /
 
 # cross spectrum over full [0,1) interval
 crossSpecEstY <- c(crossSpecEstY, rev(Conj(crossSpecEstY[-1]))[-1])
+
+# plot amplitude and phase cross-spectra
+par(mfrow=c(2,1))
+plotInds <- seq(1,length(crossSpecEstY)/2) # for plotting on [0,0.5)
+freqGrid <- (plotInds-1)/length(crossSpecEstY)
+# amplitude cross spectrum estimate
+par(mar=c(4,4,1,1))
+plot(x=freqGrid, y=Mod(crossSpecEstY[plotInds]), type="l", log="y",
+     xlab="Frequency", ylab="Amplitude Cross Spectrum Estimate")
+abline(v=seq(0,0.5, by=1/24), col="blue", lty=2, lwd=2) # daily, bi-daily, etc.
+abline(v=seq(0,0.5, by=1/(24*7)), col="orange", lty=2) # weekly, bi-weely, etc.
+# phase cross spectrum estimate
+par(mar=c(4,4,1,1))
+plot(x=freqGrid,
+     y=signal::unwrap(atan2(Im(crossSpecEstY),Re(crossSpecEstY))[plotInds]),
+     type="l", xlab="Frequency", ylab="Phase Cross Spectrum Estimate")
+
 
 
