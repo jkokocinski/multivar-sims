@@ -40,7 +40,7 @@ errCovMat.p <- 1e1 * diag(1,2)
 
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=c(366), NUM_REGR=100,
+                 numObsVec=c(1095), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=6, numTapers=11,
                  adaptWt=TRUE, embedSines=TRUE,
                  linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
@@ -105,11 +105,11 @@ dev.off()
 
 # parameters for bivariate AR(6) -- based on fit from demand & HOEP
 phiMat.r <- rbind(
-  c(2.01,-0.48,-1.49,0.12,0.64,0.6,-0.2,0.25,-0.08,0.11,0.06,0.24),
-  c(0.02,0.44,-0.02,0.12,0.02,0.01,-0.01,0.07,0,0.02,0,0.01)
+  c( 1.4387,-0.0027,-0.4391, 0.0066, 0.0274,-0.0056,-0.0352, 0.0021,-0.0288,-6e-04, 0.0235,4e-04),
+  c(-0.7668, 2.2129, 1.5532,-2.0030,-1.1167, 1.1440, 0.4379,-0.4715,-0.0337,0.0028,-0.0390,0.0668)
   )
 phiMat.p <- cbind(diag(c(0.8,0.5)), diag(c(-0.7,-0.3)), diag(c(0.5,0.5)))
-errCovMat.r <- matrix(c(143195,1631,1631,932), 2, 2)
+errCovMat.r <- matrix(c(26873,26634,26634,108503), 2, 2)
 errCovMat.p <- 1e4 * diag(1,2)
 
 
