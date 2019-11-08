@@ -7,11 +7,11 @@
 ## deltat = 1, and get "cycles per week"
 ## OR
 ## deltat = 7 and get "cycles per day" (I think... ) Compare with multitaper to make sure
-determineSeasonal <- function(data, sigCutoff, deltat=1, predictNum = 0){
+determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1, predictNum = 0){
   require('multitaper')
   
   N <- length(data)
-  nFFT <- 2^(floor(log2(N)) + 7)
+  nFFT <- 2^(floor(log2(N)) + padFactor)
   
   spec <- spec.mtm(data, deltat=deltat, Ftest=TRUE, returnInternals=T, plot=F,
                    nFFT=nFFT)
@@ -40,8 +40,8 @@ determineSeasonal <- function(data, sigCutoff, deltat=1, predictNum = 0){
     
     inv <- fft(blank,inverse=TRUE)
     sines[, i] <- Re(inv[1:N])
-    # phseAmp[i,(1:3)] <- c(spec$freq[f.index],
-    #                       fitSinusoidSingle(sines[,i], 1, f=spec$freq[f.index]))
+    phseAmp[i,(1:3)] <- c(spec$freq[f.index],
+                          fitSinusoidSingle(sines[,i], 1, f=spec$freq[f.index]))
     # phseAmp[i, (4:5)] <- c( 2 * Mod(cmv[f.index]),
     #                        atan2(Im(cmv[f.index]), Re(cmv[f.index])) )
     
@@ -65,7 +65,7 @@ determineSeasonal <- function(data, sigCutoff, deltat=1, predictNum = 0){
   }
   
   list(sinusoidData=sines,
-       sinusoidData2=sines2,
+       # sinusoidData2=sines2,
        phaseAmplitudeInfo=phseAmp,
        predicted=predicted)
 }
