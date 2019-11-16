@@ -6,16 +6,19 @@ tryCatch(setwd("~/multivar-sims"),
          }
 )
 
+library(mAr)
 require(multitaper)
 require(signal)
+source("helpers_mvSimRegr.R")
 source("seasonalFunctions.R")
+
 
 ############################ import data and format ############################
 importData <- function(prefix, seqInds, suffix="", filext, skip=0) {
   theData <- data.frame()
   
-  for (ind in seqInds) {
-  	newData <- read.csv(file=paste0(prefix, ind, suffix, filext),
+  for (indind in 1:length(seqInds)) {
+  	newData <- read.csv(file=paste0(prefix, seqInds[indind], suffix, filext),
   	                    header=TRUE, stringsAsFactors=FALSE, skip=skip)
   	theData <- rbind(theData, newData)
   }
@@ -24,6 +27,8 @@ importData <- function(prefix, seqInds, suffix="", filext, skip=0) {
 
 demand <- importData("data/PUB_Demand_", 2002:2018, "", ".csv", skip=3)
 hoep <- importData("data/PUB_PriceHOEPPredispOR_", 2002:2018, "", ".csv", skip=3)
+temperature1 <- importData("data/en_climate_hourly_ON_6158733_", sprintf("%02.0f", 1:12), "-2005_P1H", ".csv", skip=0)
+temperature2 <- importData("data/en_climate_hourly_ON_6158733_", sprintf("%02.0f", 1:12), "-2006_P1H", ".csv", skip=0)
 
 demand$datetime <- as.POSIXct(
   x=paste0(demand$Date, " ", sprintf("%02.0f", demand$Hour), ":00:00"),
@@ -53,6 +58,11 @@ iesoData$hoep <- as.numeric(iesoData$hoep)
 iesoData <- iesoData[ with(iesoData, { order(year, month, day, hour) }), ]
 row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
 
+# temperature data for 2 dfs
+tempData <- rbind(temperature1, temperature2)
+tempData <- tempData[,(6:10)]
+tempData[,4] <- as.numeric(substr(x=tempData[,4], start=1, stop=2))
+names(tempData) <- c("year","month","day","hour","temp")
 
 ################################# plot the data ################################
 png(file="img/demand-hoep_plots.png", width=1024, height=576)
@@ -68,18 +78,19 @@ dev.off()
 multitaper::spec.mtm(ts(iesoData$demand))
 multitaper::spec.mtm(ts(iesoData$hoep))
 
+Y1 <- iesoData[which(iesoData$year==2005), "demand"]
+Y2 <- iesoData[which(iesoData$year==2006), "demand"]
+X1 <- tempData[which(tempData$year==2005), "temp"]
+X2 <- tempData[which(tempData$year==2006), "temp"]
+
 # compute spec.mtm objects for both response series components
 spec.y1 <- multitaper::spec.mtm(
-  timeSeries=ts(iesoData$demand), k=6,
-  nw=11,
-  adaptiveWeighting=TRUE,
-  Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+  timeSeries=ts(Y1), k=6, nw=11, adaptiveWeighting=TRUE, Ftest=TRUE,
+  returnInternals=TRUE, plot=FALSE
 )
 spec.y2 <- multitaper::spec.mtm(
-  timeSeries=ts(iesoData$hoep), k=6,
-  nw=11,
-  adaptiveWeighting=TRUE,
-  Ftest=TRUE, returnInternals=TRUE, plot=FALSE
+  timeSeries=ts(Y2), k=6, nw=11,adaptiveWeighting=TRUE, Ftest=TRUE,
+  returnInternals=TRUE, plot=FALSE
 )
 
 # wieghts and eigencoefficients
@@ -97,9 +108,9 @@ crossSpecEstY <- c(crossSpecEstY, rev(Conj(crossSpecEstY[-1]))[-1])
 
 # F-statistics for demand and HOEP
 par(mar=c(4,4,1,1))
-plot(x=spec.y1$freq, y=spec.y1$mtm$Ftest, type="l") # demand
+plot(x=spec.y1$freq, y=spec.y1$mtm$Ftest, type="l") # Y1
 par(mar=c(4,4,1,1))
-plot(x=spec.y2$freq, y=spec.y2$mtm$Ftest, type="l") # HOEP
+plot(x=spec.y2$freq, y=spec.y2$mtm$Ftest, type="l") # Y2
 
 
 # plot amplitude and phase cross-spectra
@@ -111,8 +122,8 @@ freqGrid <- (plotInds-1)/length(crossSpecEstY)
 par(mar=c(4,4,1,1))
 plot(x=freqGrid, y=Mod(crossSpecEstY[plotInds]), type="l", log="y",
      xlab="Frequency", ylab="Amplitude Cross Spectrum Estimate")
-abline(v=seq(0,0.5, by=1/24), col="blue", lty=2, lwd=1) # daily, bi-daily, etc.
-abline(v=seq(0,0.5, by=1/(24*7)), col="orange", lty=2) # weekly, bi-weely, etc.
+# abline(v=seq(0,0.5, by=1/24), col="blue", lty=2, lwd=1) # daily, bi-daily, etc.
+# abline(v=seq(0,0.5, by=1/(24*7)), col="orange", lty=2) # weekly, bi-weely, etc.
 # phase cross spectrum estimate
 par(mar=c(4,4,1,1))
 plot(x=freqGrid,
@@ -120,33 +131,57 @@ plot(x=freqGrid,
      type="l", xlab="Frequency", ylab="Phase Cross Spectrum Estimate")
 dev.off()
 
+numObs <- length(Y1)
+
+linReg1 <- lm(Y1~0+X1)
+linReg2 <- lm(Y2~0+X2)
+
+mpi.X1 <- MASS::ginv(X1)
+mpi.X2 <- MASS::ginv(X2)
+
+bart.ccv.r <- ccf(x=Y1, y=Y2, type="covariance",
+                  lag.max=numObs-1, plot=FALSE)
+covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r$acf),
+                                       as.vector(t(mpi.X2)) )
+
+# CCVF of Y_1 and Y_2
+mtap.ccv.r <- fft(z=crossSpecEstY, inverse=TRUE) / length(crossSpecEstY)
+
+# put entries in "correct" order, from -numObs to +numObs
+mtap.ccv.r <- Re(c(tail(mtap.ccv.r, numObs-1), head(mtap.ccv.r, numObs)))
+
+# \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
+covB.mtap <- mpi.X1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2)) )
+
+
+
+
+
+
+
+
+
 
 
 ######################## deterministic signal detection ########################
 system.time(
   {
-    seas.demand <- determineSeasonal(data=iesoData$demand, sigCutoff=0.999,
-                                       padFactor=2)
+    seas.demand <- determineSeasonal(data=iesoData$demand, sigCutoff=0.999, padFactor=2)
   }
 )
 
 system.time(
   {
-    seas.hoep <- determineSeasonal(data=iesoData$hoep, sigCutoff=0.999,
-                                       padFactor=2)
+    seas.hoep <- determineSeasonal(data=iesoData$hoep, sigCutoff=0.999, padFactor=2)
   }
 )
 
 
 
 ################################# daily dataset ################################
-iesoData.d <- subset(x=iesoData, subset=(hour==1))
-row.names(iesoData.d) <- as.character(seq(1,dim(iesoData.d)[1])) # correct row.names
-spec.y1.d <- multitaper::spec.mtm(
-  timeSeries=ts(iesoData.d$demand), k=6, nw=11,
-  adaptiveWeighting=TRUE,
-  Ftest=TRUE, returnInternals=TRUE, plot=TRUE
-)
+
+
+
 
 
 ################################ low-pass filter ###############################
