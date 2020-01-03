@@ -350,9 +350,11 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # predictor series (X_1,X_2) realization
     bivAR1.p <- as.matrix(mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs))
     
+    freqsToEmbed <- c(90,60)**(-1)
+    
     if (embedSines) {
-      bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=c(240,180)**(-1),
-                                   amps=diag(errCovMat.r), ampScale=2)
+      bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
+                                   amps=diag(errCovMat.r), ampScale=1)
     }
     
     # Moore-Penrose inverses of the predictor realization vectors
@@ -381,7 +383,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     for (j in 1:NUM_REGR) {
       if (linDepY) {
         y1 <- as.numeric(arima.sim(model=list(ar=phi), n=numObs, innov=rnorm(numObs, 0, sd=sqrt(varZ.Y1))))
-        bivAR1.r <- rbind( y1, a*y1 + rnorm(numObs, 0, sd=sqrt(addedNoiseVar.Y2)) )
+        bivAR1.r <- cbind( y1, a*y1 + rnorm(numObs, 0, sd=sqrt(addedNoiseVar.Y2)) )
       } else {
         bivAR1.r <- as.matrix(
           mAr.sim(w=rep(0,2), A=phiMat.r, C=errCovMat.r, N=numObs)
@@ -392,8 +394,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       respRlzns[,,j] <- bivAR1.r
       
       if (embedSines) {
-        bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=c(240,180)**(-1),
-                                     amps=diag(errCovMat.r), ampScale=2)
+        bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=freqsToEmbed,
+                                     amps=diag(errCovMat.r), ampScale=3)
         respRlzns.s[,,j] <- bivAR1.r.s
         
         # detect & remove sinusoidal line components
@@ -401,7 +403,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
           for (p in 1:2) {
             commonSines <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
-              sigCutoff=0.999)
+              sigCutoff=0.999)$fctVals
             detRespSines <- commonSines[,2]
             
             respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - detRespSines
@@ -431,21 +433,21 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         
         # Bartlett CCVF of response series
         bart.ccv.r <- ccf(x=Y[,1], y=Y[,2], type="covariance",
-                          lag.max=numObs-1, plot=FALSE)
+                          lag.max=numObs-1, plot=FALSE)$acf
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- Bartlett-based
-        covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r$acf),
+        covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r),
                                                as.vector(t(mpi.X2)) )
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- theoretical-based
         covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
-        
         
         if (tp==3) {
           YforSpec <- respRlzns.s.w[,,j]
         } else {
           YforSpec <- Y
         }
+        
         # compute spec.mtm objects for both response series components
         spec.y1 <- multitaper::spec.mtm(
           timeSeries=ts(YforSpec[,1]), k=K,
@@ -534,7 +536,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         betas[j,] <- betas.newRow
         
         # CCVF estimate averages (without dividing by NUM_REGR yet)
-        bart.ccv.r.avg <- bart.ccv.r.avg + bart.ccv.r$acf
+        bart.ccv.r.avg <- bart.ccv.r.avg + bart.ccv.r
         mtap.ccv.r.avg <- mtap.ccv.r.avg + mtap.ccv.r
         
         
@@ -553,18 +555,24 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       if (tp==1) {
         betasOverN[[n]] <- betas
         
+        bart.ccv.r.last <- bart.ccv.r
+        mtap.ccv.r.last <- mtap.ccv.r
         bart.ccv.r.ave <- bart.ccv.r.avg
         mtap.ccv.r.ave <- mtap.ccv.r.avg
         crossSpec <- crossSpecEstY
       } else if (tp==2) {
         betasOverN.s[[n]] <- betas
         
+        bart.ccv.r.s.last <- bart.ccv.r
+        mtap.ccv.r.s.last <- mtap.ccv.r
         bart.ccv.r.s.ave <- bart.ccv.r.avg
         mtap.ccv.r.s.ave <- mtap.ccv.r.avg
         crossSpec.s <- crossSpecEstY
       } else if (tp==3) {
         betasOverN.s.w[[n]] <- betas
         
+        bart.ccv.r.s.w.last <- bart.ccv.r
+        mtap.ccv.r.s.w.last <- mtap.ccv.r
         bart.ccv.r.s.w.ave <- bart.ccv.r.avg
         mtap.ccv.r.s.w.ave <- mtap.ccv.r.avg
         crossSpec.s.w <- crossSpecEstY
@@ -635,6 +643,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     result$CI.cov.bart <- result$qSE.U.cov.bart-result$qSE.L.cov.bart
     result$CI.cov.mtap <- result$qSE.U.cov.mtap-result$qSE.L.cov.mtap
+    result$CI.cor.bart <- result$qSE.U.cor.bart-result$qSE.L.cor.bart
+    result$CI.cor.mtap <- result$qSE.U.cor.mtap-result$qSE.L.cor.mtap
     
     if (tp==1) {
       bhCovCIs <- result
@@ -647,7 +657,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     }
   }
   rm(result, betas,betas.head, betas.newRow)
-  rm(list=ls()[which(grepl("bivAR1", ls()))])
+  # rm(list=ls()[which(grepl("bivAR1", ls()))])
   
   localVars <- setdiff(ls(), names(params.init))
   
@@ -698,24 +708,31 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
         currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
         pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
       }
+      plotText <- "plot(x=result$N-5, y=result$mse.cv.bart, xlab=\"Realization Size\",
+           ylab=\"MSE of cov estimator\",
+           log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"goldenrod\", pch=16)
+      points(x=result$N+5, y=result$mse.cv.mtap, col=\"blue\", pch=17)
+      arrows(x0=result$N-5, y0=result$qSE.L.cov.bart, x1=result$N-5, y1=result$qSE.U.cov.bart,
+             length=0.05, angle=90, code=3, lwd=2, col=\"goldenrod\")
+      arrows(x0=result$N+5, y0=result$qSE.L.cov.mtap, x1=result$N+5, y1=result$qSE.U.cov.mtap,
+             length=0.05, angle=90, code=3, lwd=2, col=\"blue\")
+      legend(\"topright\", legend=c(\"Bartlett\",\"Multitaper\"), pch=c(16,17),
+             col=c(\"goldenrod\",\"blue\"))
+      # text(x=min(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0),
+      #      labels=plotComment, family=\"mono\")
+      text(x=params.init$numObsVec, y=result$qSE.L.cov.mtap, pos=1, family=\"mono\", col=\"blue\",
+           labels=sprintf(\"%.2f\", result$CI.cov.bart/result$CI.cov.mtap))
+      text(x=max(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0), family=\"mono\",
+           labels=\"[ mtm rel. efficiency ]\", col=\"blue\")"
+      
+      if (type=="cor") {
+        plotText <- gsub("cov", "cor", plotText)
+        plotText <- gsub("cv", "cor", plotText)
+      }
+      
       # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
       par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-      plot(x=result$N-5, y=result$mse.cv.bart, xlab="Realization Size",
-           ylab=paste0("MSE of co",ifelse(type=="cov","v","r"), " estimator"),
-           log="y", ylim=MSE.plotLims*10**c(-0.5,0.5), col="goldenrod", pch=16)
-      points(x=result$N+5, y=result$mse.cv.mtap, col="blue", pch=17)
-      arrows(x0=result$N-5, y0=result$qSE.L.cov.bart, x1=result$N-5, y1=result$qSE.U.cov.bart,
-             length=0.05, angle=90, code=3, lwd=2, col="goldenrod")
-      arrows(x0=result$N+5, y0=result$qSE.L.cov.mtap, x1=result$N+5, y1=result$qSE.U.cov.mtap,
-             length=0.05, angle=90, code=3, lwd=2, col="blue")
-      legend("topright", legend=c("Bartlett","Multitaper"), pch=c(16,17),
-             col=c("goldenrod","blue"))
-      # text(x=min(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0),
-      #      labels=plotComment, family="mono")
-      text(x=params.init$numObsVec, y=result$qSE.L.cov.mtap, pos=1, family="mono", col="blue",
-           labels=sprintf("%.2f", result$CI.cov.bart/result$CI.cov.mtap))
-      text(x=max(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0), family="mono",
-           labels="[ mtm rel. efficiency ]", col="blue")
+      eval(parse(text=plotText))
       
       if (writeImgFile) { dev.off() }
     }
@@ -739,18 +756,18 @@ embedSinusoids <- function(input, freqs, amps, ampScale) {
 }
 
 
-findCommonSines <- function(x, y, freqThresh, sigCutoff) {
+findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
   stopifnot(length(x)==length(y))
   
   suppressWarnings(
     {
-      seas.x <- determineSeasonal(data=x, sigCutoff=sigCutoff)
-      seas.y <- determineSeasonal(data=y, sigCutoff=sigCutoff)
+      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff)
+      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff)
     }
   )
   
   if (is.null(seas.x) | is.null(seas.y)) {
-    return(matrix(0, length(x), 2))
+    return( list(fctVals=matrix(0, length(x), 2), paramsX=NULL, paramsY=NULL) )
   }
   
   # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
@@ -769,15 +786,18 @@ findCommonSines <- function(x, y, freqThresh, sigCutoff) {
                        MARGIN=1, FUN=sum)
     allSeas.y <- apply(X=as.matrix(seas.y$sinusoidData[,(as.numeric(commonFreqInds[,2]))]),
                        MARGIN=1, FUN=sum)
-    return( matrix(c(allSeas.x, allSeas.y), ncol=2) )
+    return( list(fctVals=matrix(c(allSeas.x, allSeas.y), ncol=2),
+                         paramsX=seas.x$phaseAmplitudeInfo[commonFreqInds[,1],],
+                         paramsY=seas.y$phaseAmplitudeInfo[commonFreqInds[,2],])
+    )
   } else {
-    return( matrix(0, length(x), 2) )
+    return( list(fctVals=matrix(0, length(x), 2), paramsX=NULL, paramsY=NULL) )
   }
 } # end findCommonSines
 
 
 
-plotCCVF <- function(resultList, plotLags, stage="") {
+plotCCVF <- function(resultList, plotLags, stage="", ave=FALSE) {
   if (stage=="") {
     suffix <- ""
   } else if (stage=="s") {
@@ -787,24 +807,29 @@ plotCCVF <- function(resultList, plotLags, stage="") {
   } else {
     stop("Set a valid `stage`.")
   }
+  
   par(mar=c(4,4,1,1))
   plotText <- 
     "with(resultList,
        {
          N <- max(bhCovCIs$N)
          plot(x=plotLags, y=theo.ccv.r[plotLags+N], type=\"h\", lwd=2,
-              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.ave[plotLags+N],
-                            bart.ccv.r.ave[plotLags+N]) ),
+              # ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N],
+              #               bart.ccv.r.last[plotLags+N]) ),
+              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N]) ),
               ylab=\"CCVF (Y1,Y2)\", xlab=\"Lag\")
          abline(h=0)
-         points(x=plotLags, y=mtap.ccv.r.ave[plotLags+N], col=\"blue\")
-         points(x=plotLags, y=bart.ccv.r.ave[plotLags+N], col=\"red\")
+         points(x=plotLags, y=mtap.ccv.r.last[plotLags+N], col=\"blue\")
+         points(x=plotLags, y=bart.ccv.r.last[plotLags+N], col=\"red\")
        }
   )"
   
   plotText <- gsub("bhCovCIs", paste0("bhCovCIs", suffix), plotText)
   plotText <- gsub("bart.ccv.r", paste0("bart.ccv.r",suffix), plotText)
   plotText <- gsub("mtap.ccv.r", paste0("mtap.ccv.r",suffix), plotText)
+  if (ave) {
+    plotText <- gsub(".last", ".ave", plotText)
+  }
   
   eval(parse(text=plotText))
 } # end plotCCVF

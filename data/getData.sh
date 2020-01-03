@@ -12,7 +12,7 @@ fi
 
 # tempearature data
 if [ $1 == "temperature" ]; then
-  for year in `seq 2005 2006`
+  for year in `seq 2002 2018`
   do
   	for month in `seq 1 12`
   	do
