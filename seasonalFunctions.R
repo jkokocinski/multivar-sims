@@ -1,3 +1,5 @@
+############################# begin Dave R comment #############################
+#
 # Returns information about the seasonal components in your data
 # Depends on sigCutoff (a value between 0 and 1, probably want it around 0.99 ?)
 # Set deltat appropriately to get frequency in "cycles per unit"
@@ -7,6 +9,12 @@
 ## deltat = 1, and get "cycles per week"
 ## OR
 ## deltat = 7 and get "cycles per day" (I think... ) Compare with multitaper to make sure
+#
+############################## end Dave R comment ##############################
+#
+# Edited to include the padFactor parameter for zero-padding.
+#
+################################################################################
 determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1, predictNum = 0){
   require('multitaper')
   
