@@ -420,24 +420,41 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     ######################### do regressions and estimation ########################
     cat(paste0("# ", Sys.time()) ," | doing regressions and estimation...\n")
     for (tp in seq(1, 1 + embedSines + removeLCs, 1)) {
-      if (tp==1) { Yarr <- respRlzns }
-      else if (tp==2) { Yarr <- respRlzns.s }
-      else if (tp==3) { Yarr <- respRlzns.s }
-      else { stop("impossible tp") }
+      if (tp==1) {
+        Yarr <- respRlzns
+        predRlzn <- bivAR1.p
+        A1 <- mpi.X1
+        A2 <- mpi.X2
+      } else if (tp==2) {
+        Yarr <- respRlzns.s
+        predRlzn <- bivAR1.p.s
+        A1 <- mpi.X1
+        A2 <- mpi.X2
+      } else if (tp==3) {
+        Yarr <- respRlzns.s
+        predRlzn <- bivAR1.p
+        A1 <- mpi.X1
+        A2 <- mpi.X2
+      } else { stop("impossible tp") }
       
       for (j in 1:NUM_REGR) {
         Y <- Yarr[,,j]
         # regular lin regs
-        model1 <- lm(Y[,1] ~ 0 + bivAR1.p[,1])
-        model2 <- lm(Y[,2] ~ 0 + bivAR1.p[,2])
+        if (tp==4) { # do I want to do this? Disabled for now.
+          model1 <- lm(respRlzns.s.w[,1,j] ~ 0 + predRlzn[,1])
+          model2 <- lm(respRlzns.s.w[,2,j] ~ 0 + predRlzn[,2])
+        } else {
+          model1 <- lm(Y[,1] ~ 0 + predRlzn[,1])
+          model2 <- lm(Y[,2] ~ 0 + predRlzn[,2])
+        }
         
         # Bartlett CCVF of response series
         bart.ccv.r <- ccf(x=Y[,1], y=Y[,2], type="covariance",
                           lag.max=numObs-1, plot=FALSE)$acf
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- Bartlett-based
-        covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r),
-                                               as.vector(t(mpi.X2)) )
+        covB.bart <- A1 %*% toepLeftMult2( as.vector(bart.ccv.r),
+                                               as.vector(t(A2)) )
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- theoretical-based
         covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
@@ -486,8 +503,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         mtap.ccv.r <- Re(c(tail(mtap.ccv.r, numObs-1), head(mtap.ccv.r, numObs)))
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
-        covB.mtap <- mpi.X1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2)) )
-        # covB.mtap <- mpi.X1 %*% mtap.ccv.r.mat %*% t(mpi.X2)
+        covB.mtap <- A1 %*% toepLeftMult2( mtap.ccv.r, as.vector(t(A2)) )
+        # covB.mtap <- A1 %*% mtap.ccv.r.mat %*% t(A2)
         
         if (TRUE) {
           # Bartlett ACVFs for responses; for use in calculating corr
@@ -497,8 +514,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                              plot=FALSE)
           bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
           bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
-          var.b1.bart <- mpi.X1 %*% toepLeftMult2( bart.acv1.r, as.vector(t(mpi.X1)) )
-          var.b2.bart <- mpi.X2 %*% toepLeftMult2( bart.acv2.r, as.vector(t(mpi.X2)) )
+          var.b1.bart <- A1 %*% toepLeftMult2( bart.acv1.r, as.vector(t(A1)) )
+          var.b2.bart <- A2 %*% toepLeftMult2( bart.acv2.r, as.vector(t(A2)) )
           corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
           
           # theoretical correlations
@@ -522,8 +539,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
           mtap.acv1.r <- Re(c(tail(mtap.acv1.r, numObs-1), head(mtap.acv1.r, numObs)))
           mtap.acv2.r <- Re(c(tail(mtap.acv2.r, numObs-1), head(mtap.acv2.r, numObs)))
           
-          var.b1.mtap <- mpi.X1 %*% toepLeftMult2( mtap.acv1.r, as.vector(t(mpi.X1)) )
-          var.b2.mtap <- mpi.X2 %*% toepLeftMult2( mtap.acv2.r, as.vector(t(mpi.X2)) )
+          var.b1.mtap <- A1 %*% toepLeftMult2( mtap.acv1.r, as.vector(t(A1)) )
+          var.b2.mtap <- A2 %*% toepLeftMult2( mtap.acv2.r, as.vector(t(A2)) )
           corB.mtap <- covB.mtap / sqrt(var.b1.mtap * var.b2.mtap)
         }
         
@@ -542,7 +559,6 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         
       } # end for (j in 1:NUM_REGR)
     
-      # FIX STUFF AROUND HERE....................
       bart.ccv.r.avg <- bart.ccv.r.avg / NUM_REGR
       mtap.ccv.r.avg <- mtap.ccv.r.avg / NUM_REGR
       
