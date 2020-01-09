@@ -2,17 +2,17 @@
 
 if [ $1 == "demand" ]; then
   # demand data
-  wget http://reports.ieso.ca/public/Demand/PUB_Demand_{2002..2018}.csv
+  wget http://reports.ieso.ca/public/Demand/PUB_Demand_{2002..2019}.csv
 fi
 
 if [ $1 == "hoep" ]; then
   # HOEP data
-  wget http://reports.ieso.ca/public/PriceHOEPPredispOR/PUB_PriceHOEPPredispOR_{2002..2018}.csv
+  wget http://reports.ieso.ca/public/PriceHOEPPredispOR/PUB_PriceHOEPPredispOR_{2002..2019}.csv
 fi
 
 # tempearature data
 if [ $1 == "temperature" ]; then
-  for year in `seq 2002 2018`
+  for year in `seq 2002 2019`
   do
   	for month in `seq 1 12`
   	do
