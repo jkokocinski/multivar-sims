@@ -354,7 +354,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     if (embedSines) {
       bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
-                                   amps=diag(errCovMat.r), ampScale=1)
+                                   amps=diag(errCovMat.r), ampScale=2)
     }
     
     # Moore-Penrose inverses of the predictor realization vectors
@@ -401,10 +401,10 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         # detect & remove sinusoidal line components
         if (removeLCs) {
           for (p in 1:2) {
-            commonSines <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
+            commonSinesObj <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
-              sigCutoff=0.999)$fctVals
-            detRespSines <- commonSines[,2]
+              sigCutoff=0.999)
+            detRespSines <- commonSineObj$fctVals.com.r[,2]
             
             respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - detRespSines
           }
@@ -797,17 +797,25 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
     }
   )
   commonFreqInds <- which(commonFreqIndsXY, arr.ind=TRUE)
-  if (dim(commonFreqInds)[1]>0) {
-    allSeas.x <- apply(X=as.matrix(seas.x$sinusoidData[,(as.numeric(commonFreqInds[,1]))]),
-                       MARGIN=1, FUN=sum)
-    allSeas.y <- apply(X=as.matrix(seas.y$sinusoidData[,(as.numeric(commonFreqInds[,2]))]),
-                       MARGIN=1, FUN=sum)
-    return( list(fctVals=matrix(c(allSeas.x, allSeas.y), ncol=2),
-                         paramsX=seas.x$phaseAmplitudeInfo[commonFreqInds[,1],],
-                         paramsY=seas.y$phaseAmplitudeInfo[commonFreqInds[,2],])
-    )
+  incohFreqInds.x <- setdiff(seq(1,dim(commonFreqIndsXY)[1]), commonFreqInds[,1])
+  incohFreqInds.y <- setdiff(seq(1,dim(commonFreqIndsXY)[2]), commonFreqInds[,2])
+  
+  if (dim(commonFreqInds)[1]==0) {
+    allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData), MARGIN=1, FUN=sum)
+    allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData), MARGIN=1, FUN=sum)
+    return( list(fctVals.com.p=NULL, fctVals.com.r=NULL,
+                 paramsX.com=NULL, paramsY.com=NULL,
+                 fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
+          )
   } else {
-    return( list(fctVals=matrix(0, length(x), 2), paramsX=NULL, paramsY=NULL) )
+    allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData)[,incohFreqInds.x], MARGIN=1, FUN=sum)
+    allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData)[,incohFreqInds.y], MARGIN=1, FUN=sum)
+    return( list(fctVals.com.p=as.matrix(seas.x$sinusoidData[commonFreqInds[,1]]),
+                 fctVals.com.r=as.matrix(seas.x$sinusoidData[commonFreqInds[,2]]),
+                 paramsX.com=seas.x$phaseAmplitudeInfo[commonFreqInds[,1],],
+                 paramsY.com=seas.y$phaseAmplitudeInfo[commonFreqInds[,2],],
+                 fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
+          )
   }
 } # end findCommonSines
 
