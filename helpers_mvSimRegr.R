@@ -404,7 +404,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
             commonSinesObj <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
               sigCutoff=0.999)
-            detRespSines <- commonSineObj$fctVals.com.r[,2]
+            detRespSines <- commonSineObj$fctVals.com.y[,2]
             
             respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - detRespSines
           }
@@ -803,15 +803,15 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
   if (dim(commonFreqInds)[1]==0) {
     allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData), MARGIN=1, FUN=sum)
     allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData), MARGIN=1, FUN=sum)
-    return( list(fctVals.com.p=NULL, fctVals.com.r=NULL,
+    return( list(fctVals.com.x=NULL, fctVals.com.y=NULL,
                  paramsX.com=NULL, paramsY.com=NULL,
                  fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
           )
   } else {
     allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData)[,incohFreqInds.x], MARGIN=1, FUN=sum)
     allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData)[,incohFreqInds.y], MARGIN=1, FUN=sum)
-    return( list(fctVals.com.p=as.matrix(seas.x$sinusoidData[commonFreqInds[,1]]),
-                 fctVals.com.r=as.matrix(seas.x$sinusoidData[commonFreqInds[,2]]),
+    return( list(fctVals.com.x=as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]]),
+                 fctVals.com.y=as.matrix(seas.y$sinusoidData[,commonFreqInds[,2]]),
                  paramsX.com=seas.x$phaseAmplitudeInfo[commonFreqInds[,1],],
                  paramsY.com=seas.y$phaseAmplitudeInfo[commonFreqInds[,2],],
                  fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
