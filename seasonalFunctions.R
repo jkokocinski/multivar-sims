@@ -34,27 +34,24 @@ determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1, predictNum
   }
   
   sines <- matrix(NA, nrow=N, ncol=length(freqsIdx))
-  sines2 <- sines
   
-  phseAmp <- as.data.frame(matrix(NA, numFreqs, 3))
+  phseAmp <- as.data.frame(matrix(NA, numFreqs, 3)) # dataframe for params
   names(phseAmp) <- c("freq", "amp", "phase")
-  phseAmp$amp2 <- NA; phseAmp$phase2 <- NA
   
   for (i in 1:length(freqsIdx)){
     f.index <- freqsIdx[i]
-    blank <- matrix(data=0,nrow=nFFT,ncol=1)
-    blank[f.index] <- cmv[f.index]
-    blank[nFFT-f.index+2] <- Conj(cmv[f.index])
+    # blank <- matrix(data=0,nrow=nFFT,ncol=1)
+    # blank[f.index] <- cmv[f.index]
+    # blank[nFFT-f.index+2] <- Conj(cmv[f.index])
+    # 
+    # inv <- fft(blank,inverse=TRUE)
+    # sines[, i] <- Re(inv[1:N])
+    phseAmp[i, (1:3)] <- c(spec$freq[f.index],
+                           2 * Mod(cmv[f.index]),
+                           atan2(Im(cmv[f.index]), Re(cmv[f.index])))
     
-    inv <- fft(blank,inverse=TRUE)
-    sines[, i] <- Re(inv[1:N])
-    phseAmp[i,(1:3)] <- c(spec$freq[f.index],
-                          fitSinusoidSingle(sines[,i], 1, f=spec$freq[f.index]))
-    phseAmp[i, (4:5)] <- c( 2 * Mod(cmv[f.index]),
-                           atan2(Im(cmv[f.index]), Re(cmv[f.index])) )
-    
-    sines2 [,i] <- with(phseAmp,
-      { amp2[i] * cos(2*pi*freq[i]*seq(1,N,deltat) + phase2[i]) }
+    sines[,i] <- with(phseAmp,
+      { amp[i] * cos(2*pi*freq[i]*seq(0,N-1,deltat) + phase[i]) }
     )
   }
   
@@ -73,7 +70,6 @@ determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1, predictNum
   }
   
   list(sinusoidData=sines,
-       sinusoidData2=sines2,
        phaseAmplitudeInfo=phseAmp,
        predicted=predicted)
 }
