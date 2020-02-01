@@ -479,9 +479,9 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
           Ftest=TRUE, returnInternals=TRUE, plot=FALSE
         )
         
-        # wieghts and eigencoefficients
-        d1 <- spec.y1$mtm$eigenCoefWt
-        d2 <- spec.y2$mtm$eigenCoefWt
+        # weights and eigencoefficients
+        d1 <- sqrt(spec.y1$mtm$eigenCoefWt)
+        d2 <- sqrt(spec.y2$mtm$eigenCoefWt)
         y1 <- spec.y1$mtm$eigenCoefs
         y2 <- spec.y2$mtm$eigenCoefs
         
@@ -753,10 +753,18 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
       if (writeImgFile) { dev.off() }
     }
   )
-}
+} # end plotCIs
 
 
-
+################################ embedSinusoids ################################
+#
+# embedSinusoids : Takes an input bivariate time series and adds a sinusoidal
+#   function in each component, with frequencies defined by `freq` and
+#   amplitudes defined by `amps`, each numeric vectors of length 2.
+#
+#     * `input` should be a matrix with 2 columns.
+#     * `ampScale` is a scalar to further adjust both amplitudes.
+#
 embedSinusoids <- function(input, freqs, amps, ampScale) {
   stopifnot(class(input)=="matrix")
   stopifnot(dim(input)[2]==2, length(freqs)==2, length(amps)==2)
@@ -769,11 +777,19 @@ embedSinusoids <- function(input, freqs, amps, ampScale) {
   sines <- ampScale * sines %*% diag(amps)
   
   return(input + sines)
-}
+} # end embedSinusoids
 
 
+################################ findCommonSines ###############################
+#
+# findCommonSines : Run the determineSeasonal function on two time series to
+#   find line components in each, then identify those that are 'common' in terms
+#   of frequency.
+#
 findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
   stopifnot(length(x)==length(y))
+  
+  source("seasonalFunctions.R")
   
   suppressWarnings(
     {
@@ -800,7 +816,7 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
   incohFreqInds.x <- setdiff(seq(1,dim(commonFreqIndsXY)[1]), commonFreqInds[,1])
   incohFreqInds.y <- setdiff(seq(1,dim(commonFreqIndsXY)[2]), commonFreqInds[,2])
   
-  if (dim(commonFreqInds)[1]==0) {
+  if (dim(commonFreqInds)[1]==0) { # nothing common found
     allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData), MARGIN=1, FUN=sum)
     allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData), MARGIN=1, FUN=sum)
     return( list(fctVals.com.x=NULL, fctVals.com.y=NULL,
@@ -810,11 +826,30 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
   } else {
     allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData)[,incohFreqInds.x], MARGIN=1, FUN=sum)
     allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData)[,incohFreqInds.y], MARGIN=1, FUN=sum)
-    return( list(fctVals.com.x=as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]]),
-                 fctVals.com.y=as.matrix(seas.y$sinusoidData[,commonFreqInds[,2]]),
-                 paramsX.com=seas.x$phaseAmplitudeInfo[commonFreqInds[,1],],
-                 paramsY.com=seas.y$phaseAmplitudeInfo[commonFreqInds[,2],],
-                 fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
+    
+    fctVals.com.x <- as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]])
+    fctVals.com.y <- as.matrix(seas.y$sinusoidData[,commonFreqInds[,2]])
+    paramsX.com <- seas.x$phaseAmplitudeInfo[commonFreqInds[,1],]
+    paramsY.com <- seas.y$phaseAmplitudeInfo[commonFreqInds[,2],]
+    fctVals.incoh <- matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2)
+    
+    # phase-aligned common sinusoids in `x` series
+    fctVals.com.x.ph <- matrix(seq(0,length(x)-1,1), nrow=length(x), ncol=dim(fctVals.com.x)[2])
+    fctVals.com.x.ph <- 2*pi*fctVals.com.x.ph %*% diag(paramsX.com$freq)
+    fctVals.com.x.ph <-
+      cos(fctVals.com.x.ph + matrix(
+        paramsY.com$phase,
+        nrow = length(x),
+        ncol = dim(fctVals.com.x)[2],
+        byrow=TRUE
+      )) %*% diag(paramsX.com$amp)
+    
+    return( list(fctVals.com.x=fctVals.com.x,
+                 fctVals.com.y=fctVals.com.y,
+                 paramsX.com=paramsX.com,
+                 paramsY.com=paramsY.com,
+                 fctVals.incoh=fctVals.incoh,
+                 fctVals.com.x.ph=fctVals.com.x.ph)
           )
   }
 } # end findCommonSines
