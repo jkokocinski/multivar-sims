@@ -350,11 +350,17 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # predictor series (X_1,X_2) realization
     bivAR1.p <- as.matrix(mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs))
     
-    freqsToEmbed <- c(90,60)**(-1)
+    freqsToEmbed <- c(180,180)**(-1)
     
     if (embedSines) {
       bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
-                                   amps=diag(errCovMat.r), ampScale=2)
+                                   amps=sqrt(diag(errCovMat.p)), ampScale=5)
+      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(90,90)**(-1),
+      #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.7)
+      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(45,45)**(-1),
+      #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.2)
+      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(20,30)**(-1),
+      #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.05)
     }
     
     # Moore-Penrose inverses of the predictor realization vectors
@@ -395,7 +401,11 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       
       if (embedSines) {
         bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=freqsToEmbed,
-                                     amps=diag(errCovMat.r), ampScale=3)
+                                     amps=sqrt(diag(errCovMat.r)), ampScale=5)
+        # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(90,90)**(-1),
+        #                              amps=diag(errCovMat.r), ampScale=0.25)
+        # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(45,45)**(-1),
+        #                              amps=diag(errCovMat.r), ampScale=0.1)
         respRlzns.s[,,j] <- bivAR1.r.s
         
         # detect & remove sinusoidal line components
@@ -404,9 +414,9 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
             commonSinesObj <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
               sigCutoff=0.999)
-            detRespSines <- commonSineObj$fctVals.com.y[,2]
+            detRespSines <- commonSinesObj$fctVals.com.y
             
-            respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - detRespSines
+            respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - apply(detRespSines, 1, sum)
           }
           
         } # end if(removeLCs)
@@ -428,8 +438,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       } else if (tp==2) {
         Yarr <- respRlzns.s
         predRlzn <- bivAR1.p.s
-        A1 <- mpi.X1
-        A2 <- mpi.X2
+        A1 <- mpi.X1.s
+        A2 <- mpi.X2.s
       } else if (tp==3) {
         Yarr <- respRlzns.s
         predRlzn <- bivAR1.p
@@ -480,8 +490,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         )
         
         # weights and eigencoefficients
-        d1 <- sqrt(spec.y1$mtm$eigenCoefWt)
-        d2 <- sqrt(spec.y2$mtm$eigenCoefWt)
+        d1 <- spec.y1$mtm$eigenCoefWt
+        d2 <- spec.y2$mtm$eigenCoefWt
         y1 <- spec.y1$mtm$eigenCoefs
         y2 <- spec.y2$mtm$eigenCoefs
         
@@ -519,8 +529,8 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
           corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
           
           # theoretical correlations
-          var.b1.theo <- mpi.X1 %*% toepLeftMult2( theo.acv1.r, as.vector(t(mpi.X1)) )
-          var.b2.theo <- mpi.X2 %*% toepLeftMult2( theo.acv2.r, as.vector(t(mpi.X2)) )
+          var.b1.theo <- A1 %*% toepLeftMult2( theo.acv1.r, as.vector(t(A1)) )
+          var.b2.theo <- A2 %*% toepLeftMult2( theo.acv2.r, as.vector(t(A2)) )
           corB.theo <- covB.theo / sqrt(var.b1.theo * var.b2.theo)
           
           # autospectra for Y_1 and Y_2
@@ -692,6 +702,173 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
 
 
 
+
+################################ embedSinusoids ################################
+#
+# embedSinusoids : Takes an input bivariate time series and adds a sinusoidal
+#   function in each component, with frequencies defined by `freq` and
+#   amplitudes defined by `amps`, each numeric vectors of length 2.
+#
+#     * `input` should be a matrix with 2 columns.
+#     * `ampScale` is a scalar to further adjust both amplitudes.
+#
+embedSinusoids <- function(input, freqs, amps, ampScale) {
+  stopifnot(class(input)=="matrix")
+  stopifnot(dim(input)[2]==2, length(freqs)==2, length(amps)==2)
+  
+  numObs <- dim(input)[1]
+  
+  sines <- matrix(nrow=dim(input)[1], ncol=2)
+  sines[,1] <- cos(2*pi*freqs[1]*(1:numObs))
+  sines[,2] <- cos(2*pi*freqs[2]*(1:numObs))
+  sines <- ampScale * sines %*% diag(amps)
+  
+  return(input + sines)
+} # end embedSinusoids
+
+
+################################ findCommonSines ###############################
+#
+# findCommonSines : Run the determineSeasonal function on two time series to
+#   find line components in each, then identify those that are 'common' in terms
+#   of frequency.
+#
+findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
+  stopifnot(length(x)==length(y))
+  
+  source("seasonalFunctions.R")
+  
+  suppressWarnings(
+    {
+      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff)
+      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff)
+    }
+  )
+  
+  if (is.null(seas.x) | is.null(seas.y)) {
+    return( list(fctVals=matrix(0, length(x), 2), paramsX=NULL, paramsY=NULL) )
+  }
+  
+  # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
+  #   i-th frequency indentified in seas1 is within the threshold of the
+  #   j-th frequency indentified in seas2; threshold defined by `thresh`.
+  commonFreqIndsXY <- outer(
+    X = seas.x$phaseAmplitudeInfo$freq,
+    Y = seas.y$phaseAmplitudeInfo$freq,
+    FUN = function(x, y, thresh=freqThresh) {
+      abs(x-y) < thresh
+    }
+  )
+  commonFreqInds <- which(commonFreqIndsXY, arr.ind=TRUE)
+  incohFreqInds.x <- setdiff(seq(1,dim(commonFreqIndsXY)[1]), commonFreqInds[,1])
+  incohFreqInds.y <- setdiff(seq(1,dim(commonFreqIndsXY)[2]), commonFreqInds[,2])
+  
+  if (dim(commonFreqInds)[1]==0) { # nothing common found
+    allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData), MARGIN=1, FUN=sum)
+    allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData), MARGIN=1, FUN=sum)
+    return( list(fctVals.com.x=NULL, fctVals.com.y=NULL,
+                 paramsX.com=NULL, paramsY.com=NULL,
+                 fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
+          )
+  } else {
+    if (length(incohFreqInds.x)<1) {
+      allSeas.incoh.x <- rep(0, length(x))
+    } else {
+      allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData[,incohFreqInds.x]), MARGIN=1, FUN=sum)
+    }
+    
+    if (length(incohFreqInds.y)<1) {
+      allSeas.incoh.y <- rep(0, length(y))
+    } else {
+      allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData[,incohFreqInds.y]), MARGIN=1, FUN=sum)
+    }
+    
+    fctVals.com.x <- as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]])
+    fctVals.com.y <- as.matrix(seas.y$sinusoidData[,commonFreqInds[,2]])
+    paramsX.com <- seas.x$phaseAmplitudeInfo[commonFreqInds[,1],]
+    paramsY.com <- seas.y$phaseAmplitudeInfo[commonFreqInds[,2],]
+    fctVals.incoh <- matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2)
+    
+    # phase-aligned common sinusoids in `x` series
+    fctVals.com.x.ph <- matrix(seq(0,length(x)-1,1), nrow=length(x), ncol=dim(fctVals.com.x)[2])
+    fctVals.com.x.ph <- 2*pi*fctVals.com.x.ph %*%
+      diag(paramsX.com$freq, nrow=dim(paramsX.com)[1], ncol=dim(paramsX.com)[1])
+    fctVals.com.x.ph <-
+      cos(fctVals.com.x.ph + matrix(
+        paramsY.com$phase,
+        nrow = length(x),
+        ncol = dim(fctVals.com.x)[2],
+        byrow=TRUE
+      )) %*% diag(paramsX.com$amp, nrow=dim(paramsX.com)[1], ncol=dim(paramsX.com)[1])
+    
+    return( list(fctVals.com.x=fctVals.com.x,
+                 fctVals.com.y=fctVals.com.y,
+                 paramsX.com=paramsX.com,
+                 paramsY.com=paramsY.com,
+                 fctVals.incoh=fctVals.incoh,
+                 fctVals.com.x.ph=fctVals.com.x.ph)
+          )
+  }
+} # end findCommonSines
+
+
+
+################################### plotCCVF ###################################
+#
+# Plot the theoretical CCVF for the specified `plotLags` vector of integers.
+#
+#     * `stage` : A string specifying the suffix on the relevant data objects.
+#        A null string, "", specifies that just the generated AR realizations
+#        should be used; ".s" for sinusoids embedded; ".s.w" for sinusoids
+#        embedded and then removed using Thompson's F-test. (Note that sinusoids
+#        are not removed from for any of the Bartlett estimation.)
+#     * `ave` : A logical; should the average estimated CCVFs be plotted? If
+#       FALSE, the CCVF estimates from the last generated realizations are used.
+#
+plotCCVF <- function(resultList, plotLags, stage="", ave=FALSE) {
+  if (stage=="") {
+    suffix <- ""
+  } else if (stage=="s") {
+    suffix <- ".s"
+  } else if (stage=="s.w") {
+    suffix <- ".s.w"
+  } else {
+    stop("Set a valid `stage`.")
+  }
+  
+  par(mar=c(4,4,1,1))
+  plotText <- 
+    "with(resultList,
+       {
+         N <- max(bhCovCIs$N)
+         plot(x=plotLags, y=theo.ccv.r[plotLags+N], type=\"h\", lwd=2,
+              # ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N],
+              #               bart.ccv.r.last[plotLags+N]) ),
+              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N]) ),
+              ylab=\"CCVF (Y1,Y2)\", xlab=\"Lag\")
+         abline(h=0)
+         points(x=plotLags, y=mtap.ccv.r.last[plotLags+N], col=\"blue\")
+         points(x=plotLags, y=bart.ccv.r.last[plotLags+N], col=\"red\")
+       }
+  )"
+  
+  plotText <- gsub("bhCovCIs", paste0("bhCovCIs", suffix), plotText)
+  plotText <- gsub("bart.ccv.r", paste0("bart.ccv.r",suffix), plotText)
+  plotText <- gsub("mtap.ccv.r", paste0("mtap.ccv.r",suffix), plotText)
+  if (ave) {
+    plotText <- gsub(".last", ".ave", plotText)
+  }
+  
+  eval(parse(text=plotText))
+} # end plotCCVF
+
+
+#################################### plotCIs ###################################
+#
+# Plot the estimated confidence intervals for the Bartlett- and MTM-based
+#   estimator of the covariance between the \hat{\beta}_0's. The endpoints of
+#   these CIs are based on sample quantiles (hard-coded).
+#
 plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
   with(resultList,
     {
@@ -756,141 +933,78 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
 } # end plotCIs
 
 
-################################ embedSinusoids ################################
-#
-# embedSinusoids : Takes an input bivariate time series and adds a sinusoidal
-#   function in each component, with frequencies defined by `freq` and
-#   amplitudes defined by `amps`, each numeric vectors of length 2.
-#
-#     * `input` should be a matrix with 2 columns.
-#     * `ampScale` is a scalar to further adjust both amplitudes.
-#
-embedSinusoids <- function(input, freqs, amps, ampScale) {
-  stopifnot(class(input)=="matrix")
-  stopifnot(dim(input)[2]==2, length(freqs)==2, length(amps)==2)
-  
-  numObs <- dim(input)[1]
-  
-  sines <- matrix(nrow=dim(input)[1], ncol=2)
-  sines[,1] <- sin(2*pi*freqs[1]*(1:numObs))
-  sines[,2] <- sin(2*pi*freqs[2]*(1:numObs))
-  sines <- ampScale * sines %*% diag(amps)
-  
-  return(input + sines)
-} # end embedSinusoids
 
-
-################################ findCommonSines ###############################
+################################# plotCIcompare ################################
 #
-# findCommonSines : Run the determineSeasonal function on two time series to
-#   find line components in each, then identify those that are 'common' in terms
-#   of frequency.
+# Functions like `plotCIs`, except plots the CIs from each stage (regular, sines
+#   embedded, sines embedded & removed) for either the Bartlett- or MTM-based
+#   covariance estimator (as specified by `estType` being "bart" or "mtap").
 #
-findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
-  stopifnot(length(x)==length(y))
+#     * `Nind` : the index of the realization size to be used; the row number of
+#       the `bhCovCIs*` data.frame.
+#
+plotCIcompare <- function(resultList, type="cov", estType, Nind=1, writeImgFile=FALSE) {
+  stopifnot(length(Nind)==1)
+  stopifnot(Nind-floor(Nind)==0)
   
-  source("seasonalFunctions.R")
-  
-  suppressWarnings(
+  with(resultList,
     {
-      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff)
-      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff)
+      if (estType=="bart") {
+        pType <- 16
+        plotCol <- "goldenrod"
+      } else if (estType=="mtap") {
+        pType <- 17
+        plotCol <- "blue"
+      } else {
+        stop("Set a valid `estType`: either \"bart\" or \"mtap\".")
+      }
+      
+      stages <- 1:3 # c("orig.","with LCs","whitened") # labels for x-axis
+        
+      # MSE plot
+      CIendpointsStr <- paste0(
+        paste0(
+          rep("bhCovCIs", 6), rep(c("", ".s", ".s.w"), 2), "$qSE.",
+          rep(c("L", "U"), each = 3), ".", type, ".", estType, "[Nind]"
+        ),
+        collapse = ",\n")
+      MSE.plotLims <- eval(parse(text = paste0("range( c(",
+                                               CIendpointsStr, ") )")))
+      if (writeImgFile) {
+        currTime <- gsub(" ", "-", gsub(":","", gsub("-","",Sys.time())))
+        pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
+      }
+      plotText <- "plot(x=stages, y=rep(bhCovCIs$mse.cv.mtap[Nind],3), xlab=\"Realization Type\",
+           ylab=\"MSE of cov estimator\", xlim=c(0.5,3.5), xaxt=\"n\",
+           log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"white\")
+      points(x=stages[1], y=bhCovCIs$mse.cv.mtap[Nind], col=plotCol, pch=pType)
+      points(x=stages[2], y=bhCovCIs.s$mse.cv.mtap[Nind], col=plotCol, pch=pType)
+      points(x=stages[3], y=bhCovCIs.s.w$mse.cv.mtap[Nind], col=plotCol, pch=pType)
+      arrows(x0=stages[1], y0=bhCovCIs$qSE.L.cov.mtap[Nind], x1=stages[1], y1=bhCovCIs$qSE.U.cov.mtap[Nind],
+             length=0.05, angle=90, code=3, lwd=2, col=plotCol)
+      arrows(x0=stages[2], y0=bhCovCIs.s$qSE.L.cov.mtap[Nind], x1=stages[2], y1=bhCovCIs.s$qSE.U.cov.mtap[Nind],
+             length=0.05, angle=90, code=3, lwd=2, col=plotCol)
+      arrows(x0=stages[3], y0=bhCovCIs.s.w$qSE.L.cov.mtap[Nind], x1=stages[3], y1=bhCovCIs.s.w$qSE.U.cov.mtap[Nind],
+             length=0.05, angle=90, code=3, lwd=2, col=plotCol)
+      # legend(\"topright\", legend=c(\"Bartlett\",\"Multitaper\"), pch=c(16,17),
+      #        col=c(\"goldenrod\",\"blue\"))"
+      
+      if (type=="cor") {
+        plotText <- gsub("cov", "cor", plotText)
+        plotText <- gsub("cv", "cor", plotText)
+      }
+      if (estType=="bart") {
+        plotText <- gsub(".mtap", ".bart", plotText)
+      }
+      
+      # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
+      par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+      eval(parse(text=plotText)) # produce the plot
+      axis(side=1, at=1:3, labels=c("orig.","with LCs","whitened")) # make x-axis
+      
+      if (writeImgFile) { dev.off() }
     }
   )
-  
-  if (is.null(seas.x) | is.null(seas.y)) {
-    return( list(fctVals=matrix(0, length(x), 2), paramsX=NULL, paramsY=NULL) )
-  }
-  
-  # commonFreqIndsXY is a matrix where the (i,j)-th entry is TRUE iff the
-  #   i-th frequency indentified in seas1 is within the threshold of the
-  #   j-th frequency indentified in seas2; threshold defined by `thresh`.
-  commonFreqIndsXY <- outer(
-    X = seas.x$phaseAmplitudeInfo$freq,
-    Y = seas.y$phaseAmplitudeInfo$freq,
-    FUN = function(x, y, thresh=freqThresh) {
-      abs(x-y) < thresh
-    }
-  )
-  commonFreqInds <- which(commonFreqIndsXY, arr.ind=TRUE)
-  incohFreqInds.x <- setdiff(seq(1,dim(commonFreqIndsXY)[1]), commonFreqInds[,1])
-  incohFreqInds.y <- setdiff(seq(1,dim(commonFreqIndsXY)[2]), commonFreqInds[,2])
-  
-  if (dim(commonFreqInds)[1]==0) { # nothing common found
-    allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData), MARGIN=1, FUN=sum)
-    allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData), MARGIN=1, FUN=sum)
-    return( list(fctVals.com.x=NULL, fctVals.com.y=NULL,
-                 paramsX.com=NULL, paramsY.com=NULL,
-                 fctVals.incoh=matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2))
-          )
-  } else {
-    allSeas.incoh.x <- apply(X=as.matrix(seas.x$sinusoidData)[,incohFreqInds.x], MARGIN=1, FUN=sum)
-    allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData)[,incohFreqInds.y], MARGIN=1, FUN=sum)
-    
-    fctVals.com.x <- as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]])
-    fctVals.com.y <- as.matrix(seas.y$sinusoidData[,commonFreqInds[,2]])
-    paramsX.com <- seas.x$phaseAmplitudeInfo[commonFreqInds[,1],]
-    paramsY.com <- seas.y$phaseAmplitudeInfo[commonFreqInds[,2],]
-    fctVals.incoh <- matrix(c(allSeas.incoh.x, allSeas.incoh.y), ncol=2)
-    
-    # phase-aligned common sinusoids in `x` series
-    fctVals.com.x.ph <- matrix(seq(0,length(x)-1,1), nrow=length(x), ncol=dim(fctVals.com.x)[2])
-    fctVals.com.x.ph <- 2*pi*fctVals.com.x.ph %*% diag(paramsX.com$freq)
-    fctVals.com.x.ph <-
-      cos(fctVals.com.x.ph + matrix(
-        paramsY.com$phase,
-        nrow = length(x),
-        ncol = dim(fctVals.com.x)[2],
-        byrow=TRUE
-      )) %*% diag(paramsX.com$amp)
-    
-    return( list(fctVals.com.x=fctVals.com.x,
-                 fctVals.com.y=fctVals.com.y,
-                 paramsX.com=paramsX.com,
-                 paramsY.com=paramsY.com,
-                 fctVals.incoh=fctVals.incoh,
-                 fctVals.com.x.ph=fctVals.com.x.ph)
-          )
-  }
-} # end findCommonSines
-
-
-
-plotCCVF <- function(resultList, plotLags, stage="", ave=FALSE) {
-  if (stage=="") {
-    suffix <- ""
-  } else if (stage=="s") {
-    suffix <- ".s"
-  } else if (stage=="s.w") {
-    suffix <- ".s.w"
-  } else {
-    stop("Set a valid `stage`.")
-  }
-  
-  par(mar=c(4,4,1,1))
-  plotText <- 
-    "with(resultList,
-       {
-         N <- max(bhCovCIs$N)
-         plot(x=plotLags, y=theo.ccv.r[plotLags+N], type=\"h\", lwd=2,
-              # ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N],
-              #               bart.ccv.r.last[plotLags+N]) ),
-              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N]) ),
-              ylab=\"CCVF (Y1,Y2)\", xlab=\"Lag\")
-         abline(h=0)
-         points(x=plotLags, y=mtap.ccv.r.last[plotLags+N], col=\"blue\")
-         points(x=plotLags, y=bart.ccv.r.last[plotLags+N], col=\"red\")
-       }
-  )"
-  
-  plotText <- gsub("bhCovCIs", paste0("bhCovCIs", suffix), plotText)
-  plotText <- gsub("bart.ccv.r", paste0("bart.ccv.r",suffix), plotText)
-  plotText <- gsub("mtap.ccv.r", paste0("mtap.ccv.r",suffix), plotText)
-  if (ave) {
-    plotText <- gsub(".last", ".ave", plotText)
-  }
-  
-  eval(parse(text=plotText))
-} # end plotCCVF
+} # end plotCIs
 
 

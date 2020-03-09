@@ -14,7 +14,7 @@ source("seasonalFunctions.R")
 ######################## parameters for bivariate AR(1) ########################
 # phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
 # phiMat.p <- matrix(c(0.7,-0.2,0.5,-0.3), nrow=2, ncol=2, byrow=TRUE)
-# errCovMat.r <- 1 * (diag(1,2) + matrix(c(0,0.00,0.00,0), 2, 2))
+# errCovMat.r <- 1 * (diag(1,2) + matrix(c(0,0.55,0.55,0), 2, 2))
 # errCovMat.p <- 1 * diag(1,2)
 
 ######################## parameters for bivariate AR(2) ########################
@@ -27,10 +27,10 @@ errCovMat.p <- 1e1 * diag(1,2)
 ################## Run the process simulations and regressions #################
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=c(1095), NUM_REGR=100,
-                 mtmFixed="NW", W=0.01, timeBandProd=6, numTapers=11,
+                 numObsVec=c(1024), NUM_REGR=100,
+                 mtmFixed="NW", W=0.01, timeBandProd=9, numTapers=17,
                  adaptWt=TRUE, embedSines=TRUE,
-                 linDepY=TRUE, computeCorr=TRUE, removeLCs=TRUE)
+                 linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
 
 plotCIs(X, stage="", type="cov", writeImgFile=F)
 plotCIs(X, stage="s", type="cov", writeImgFile=F)
@@ -40,12 +40,15 @@ boxplot(cbind(X$betasOverN[[1]]$se.cv.bart,X$betasOverN[[1]]$se.cv.mtap), log="y
 boxplot(cbind(X$betasOverN.s[[1]]$se.cv.bart,X$betasOverN.s[[1]]$se.cv.mtap), log="y")
 boxplot(cbind(X$betasOverN.s.w[[1]]$se.cv.bart,X$betasOverN.s.w[[1]]$se.cv.mtap), log="y")
 
+plotCIcompare(X, type="cor", estType="bart")
+plotCIcompare(X, type="cor", estType="mtap")
+
 ################################## CCVF plots ##################################
 # png("img/ccvf-plot.png", width=640, height=360)
-pdf("img/ccvf-plot.pdf", width=6.4, height=3.6)
-plotCCVF(resultList=X, plotLags=seq(-75,75), stage="", ave=F)
-plotCCVF(resultList=X, plotLags=seq(-75,75), stage="s", ave=F)
-plotCCVF(resultList=X, plotLags=seq(-75,75), stage="s.w", ave=F)
+# pdf("img/ccvf-plot.pdf", width=6.4, height=3.6)
+plotCCVF(resultList=X, plotLags=seq(-200,200), stage="", ave=F)
+plotCCVF(resultList=X, plotLags=seq(-200,200), stage="s", ave=F)
+plotCCVF(resultList=X, plotLags=seq(-200,200), stage="s.w", ave=F)
 # plotLags <- seq(-20,20)
 # par(mar=c(4,4,1,1))
 # with(X,
@@ -66,14 +69,14 @@ dev.off()
 ################################ covariance plot ###############################
 png("img/cov-plot.png", width=640, height=360)
 par(mar=c(4,4,1,1))
-with(X$betasOverN[[1]], {
+with(X$betasOverN.s.w[[1]], {
   plot(cv.bart, ylim=range(c(cv.bart, cv.mtap, cv.theo, X$bhCovCIs$smpl.cov[1])),
        col="goldenrod", xlab="Regression #", ylab="cov(b1,b2)")
 points(x=1:length(cv.mtap), y=cv.mtap,
        col="blue")
 abline(h=cv.theo[1], col="forestgreen", lwd=2)
 })
-abline(h=X$bhCovCIs$smpl.cov[1], col="red", lty=2)
+abline(h=X$bhCovCIs.s.w$smpl.cov[1], col="red", lty=2)
 dev.off()
 # end cov plot
 
@@ -94,17 +97,17 @@ dev.off()
 
 
 # parameters for bivariate AR(4) -- based on fit from demand & HOEP
-phiMat.r <- rbind(
+phiMat.p <- rbind(
   c( 1.5103, 0.0926, -0.9208, -0.1638, 0.5057, 0.1363, -0.1155, -0.0689 ),
   c( 0.0770, 1.5231, -0.1707, -0.8566, 0.1523, 0.4166, -0.0613, -0.1054 )
 )
 # AR(2) for HOEP
-phiMat.p <- rbind(
+phiMat.r <- rbind(
   c(0.6275, 0.0122,  0.1215, -0.0388),
   c(0.0084, 0.6282, -0.0370,  0.1294)
 )
-errCovMat.r <- matrix(c(77572,40692,40692,75347), 2, 2)
-errCovMat.p <- matrix(c(338,15,15,350), 2, 2)
+errCovMat.p <- matrix(c(77572,40692,40692,75347), 2, 2)
+errCovMat.r <- matrix(c(338,15,15,350), 2, 2)
 
 
 
