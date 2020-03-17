@@ -23,13 +23,27 @@ phiMat.p <- matrix(c(0.8,0,-0.7,0,0,0.5,0,-0.3), nrow=2, ncol=4, byrow=TRUE)
 errCovMat.r <- 1e1 * (diag(c(1,1), 2,2) + matrix(c(0,0.00,0.00,0), 2, 2))
 errCovMat.p <- 1e1 * diag(1,2)
 
+###### parameters for bivariate AR(4) -- based on fit from demand & HOEP #######
+# phiMat.p <- rbind(
+#   c( 1.5103, 0.0926, -0.9208, -0.1638, 0.5057, 0.1363, -0.1155, -0.0689 ),
+#   c( 0.0770, 1.5231, -0.1707, -0.8566, 0.1523, 0.4166, -0.0613, -0.1054 )
+# )
+# # AR(2) for HOEP
+# phiMat.r <- rbind(
+#   c(0.6275, 0.0122,  0.1215, -0.0388),
+#   c(0.0084, 0.6282, -0.0370,  0.1294)
+# )
+# errCovMat.p <- matrix(c(77572,40692,40692,75347), 2, 2)
+# errCovMat.r <- matrix(c(338,15,15,350), 2, 2)
+
+
 
 ################## Run the process simulations and regressions #################
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
                  numObsVec=c(1024), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=9, numTapers=17,
-                 adaptWt=TRUE, embedSines=TRUE,
+                 adaptWt=FALSE, embedSines=TRUE,
                  linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
 
 plotCIs(X, stage="", type="cov", writeImgFile=F)
@@ -96,18 +110,22 @@ dev.off()
 
 
 
-# parameters for bivariate AR(4) -- based on fit from demand & HOEP
-phiMat.p <- rbind(
-  c( 1.5103, 0.0926, -0.9208, -0.1638, 0.5057, 0.1363, -0.1155, -0.0689 ),
-  c( 0.0770, 1.5231, -0.1707, -0.8566, 0.1523, 0.4166, -0.0613, -0.1054 )
+# Plot sample amplitude cross spectrum for Bartlett and MTM for final rlzn and
+#   and compare to the theoretical.
+bart.cspec <- with(X, {
+  fft(z=c(respRlzns[,1,params.init$NUM_REGR],rep(0,1024))) *
+    Conj(fft(z=c(X$respRlzns[,2,params.init$NUM_REGR],rep(0,1024)))) / 2048
+  }
 )
-# AR(2) for HOEP
-phiMat.r <- rbind(
-  c(0.6275, 0.0122,  0.1215, -0.0388),
-  c(0.0084, 0.6282, -0.0370,  0.1294)
-)
-errCovMat.p <- matrix(c(77572,40692,40692,75347), 2, 2)
-errCovMat.r <- matrix(c(338,15,15,350), 2, 2)
+plot.lims <- range(c(Mod(bart.cspec[-1])**2, Mod(X$crossSpec)**2, Mod(specs[1,2,])**2))
+specs <- bivARp.spec(phiMat=phiMat.r, V=errCovMat.r, freqs=c(0,seq(1,1024))/2048)
+par(mar=c(4,4,1,1))
+plot(x=c(0,seq(1,1024)/2048), y=Mod(bart.cspec[1:1025])**2,
+     type="l", log="y", col="red", ylim=plot.lims,
+     xlab="Frequency", ylab="Amplitude Cross Spectrum (Y1,Y2)")
+lines(x=c(0,seq(1,1024)/2048), y=Mod(X$crossSpec[1:1025])**2, col="blue")
+lines(x=c(0,seq(1,1024)/2048), y=Mod(specs[1,2,])**2, col="forestgreen", lwd=2)
+dev.off()
 
 
 
