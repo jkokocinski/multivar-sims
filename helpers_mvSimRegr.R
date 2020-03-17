@@ -107,15 +107,34 @@ toepLeftMult2 <- function(toepVec,rightVec) {
 #
 #
 bilinToep <- function(leftVec,toepVec,rightVec) {
-  if (class(leftVec)!="numeric") { stop("leftVec must be a numeric vector.") }
+  if (class(leftVec)!="numeric") {
+    if (class(leftVec)=="matrix") {
+      if(any(dim(leftVec)==1)) {
+        leftVec <- as.vector(leftVec)
+      }
+    }
+    else {
+      stop("leftVec must be a numeric vector.")
+    }
+  }
   if (class(toepVec)!="numeric") { stop("toepVec must be a numeric vector.") }
-  if (class(rightVec)!="numeric") { stop("rightVec must be a numeric vector.") }
+  if (class(rightVec)!="numeric") {
+    if (class(rightVec)=="matrix") {
+      if(any(dim(rightVec)==1)) {
+        rightVec <- as.vector(rightVec)
+      }
+    }
+    else {
+      stop("rightVec must be a numeric vector.")
+    }
+  }
   if (length(toepVec)!=2*length(rightVec)-1) {
     stop("non-conformable arguments")
   }
   if (length(leftVec)!=length(rightVec)) {
     stop("non-conformable arguments")
   }
+  
   N <- length(leftVec)
   fft.lv <- fft(z=rev(c(rep(0, N-1), leftVec)))
   fft.tv <- fft(z=toepVec)
@@ -350,11 +369,11 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # predictor series (X_1,X_2) realization
     bivAR1.p <- as.matrix(mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs))
     
-    freqsToEmbed <- c(180,180)**(-1)
+    freqsToEmbed <- c(90,90)**(-1)
     
     if (embedSines) {
       bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
-                                   amps=sqrt(diag(errCovMat.p)), ampScale=5)
+                                   amps=sqrt(diag(errCovMat.p)), ampScale=8)
       # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(90,90)**(-1),
       #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.7)
       # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(45,45)**(-1),
@@ -401,7 +420,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       
       if (embedSines) {
         bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=freqsToEmbed,
-                                     amps=sqrt(diag(errCovMat.r)), ampScale=5)
+                                     amps=sqrt(diag(errCovMat.r)), ampScale=10)
         # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(90,90)**(-1),
         #                              amps=diag(errCovMat.r), ampScale=0.25)
         # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(45,45)**(-1),
@@ -415,6 +434,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
               sigCutoff=0.999)
             detRespSines <- commonSinesObj$fctVals.com.y
+            if(is.null(detRespSines)) { detRespSines <- cbind(rep(0,1024)) } # to avoid NULLs
             
             respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - apply(detRespSines, 1, sum)
           }
@@ -783,7 +803,7 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
       allSeas.incoh.y <- apply(X=as.matrix(seas.y$sinusoidData[,incohFreqInds.y]), MARGIN=1, FUN=sum)
     }
     
-    fctVals.com.x <- as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]])
+    fctVals.com.x <- as.matrix(seas.x$sinusoidData[,commonFreqInds[,1]]) # incl. possible doubles at this point
     fctVals.com.y <- as.matrix(seas.y$sinusoidData[,commonFreqInds[,2]])
     paramsX.com <- seas.x$phaseAmplitudeInfo[commonFreqInds[,1],]
     paramsY.com <- seas.y$phaseAmplitudeInfo[commonFreqInds[,2],]
@@ -800,6 +820,14 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
         ncol = dim(fctVals.com.x)[2],
         byrow=TRUE
       )) %*% diag(paramsX.com$amp, nrow=dim(paramsX.com)[1], ncol=dim(paramsX.com)[1])
+    
+    keepInds.x <- which(!duplicated(commonFreqInds[,1]))
+    keepInds.y <- which(!duplicated(commonFreqInds[,2]))
+    fctVals.com.x <- as.matrix(fctVals.com.x[,keepInds.x]) # dupes now removed
+    fctVals.com.y <- as.matrix(fctVals.com.y[,keepInds.y])
+    paramsX.com <- paramsX.com[keepInds.x,]
+    paramsY.com <- paramsY.com[keepInds.y,]
+    fctVals.com.x.ph <- as.matrix(fctVals.com.x.ph[,keepInds.x])
     
     return( list(fctVals.com.x=fctVals.com.x,
                  fctVals.com.y=fctVals.com.y,
@@ -975,7 +1003,7 @@ plotCIcompare <- function(resultList, type="cov", estType, Nind=1, writeImgFile=
         pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
       }
       plotText <- "plot(x=stages, y=rep(bhCovCIs$mse.cv.mtap[Nind],3), xlab=\"Realization Type\",
-           ylab=\"MSE of cov estimator\", xlim=c(0.5,3.5), xaxt=\"n\",
+           ylab=\"SE of cov estimator\", xlim=c(0.5,3.5), xaxt=\"n\",
            log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"white\")
       points(x=stages[1], y=bhCovCIs$mse.cv.mtap[Nind], col=plotCol, pch=pType)
       points(x=stages[2], y=bhCovCIs.s$mse.cv.mtap[Nind], col=plotCol, pch=pType)
@@ -1007,4 +1035,32 @@ plotCIcompare <- function(resultList, type="cov", estType, Nind=1, writeImgFile=
   )
 } # end plotCIs
 
+
+
+################################## bivARp.spec #################################
+#
+# Compute the spectral matrix for a bivariate VAR(p) process at a given set of
+#   frequencies.
+#
+bivARp.spec <- function(phiMat, V=diag(1,2), freqs=seq(0,0.5,0.01)) {
+  p <- dim(phiMat)[2]/2
+  V.inv <- solve(V)
+  specMtx <- array(0, dim=c(2, 2, length(freqs)))
+  for (f.ind in 1:length(freqs)) {
+    expSeq <- exp(-1i*2*pi * freqs[f.ind] * seq(1, p)) # to be used in expMat, below
+    # expMat is a matrix of complex exponentials; a column of 2x2 identities scaled
+    #   by exp(-i*2*pi*f*k), for k=1..p
+    expMat <-
+      matrix(
+        matrix(c(expSeq, rep(0, 2 * p), expSeq), ncol=p, byrow=TRUE),
+        nrow = 2 * p,
+        ncol = 2,
+        byrow = TRUE
+      )
+    P <- diag(1,2) - phiMat %*% expMat
+    P.H <- Conj(t( diag(1,2) - phiMat %*% expMat ))
+    specMtx[,,f.ind] <- solve(P.H %*% V.inv %*% P)
+  }
+  return(specMtx)
+} # end bivARp.spec
 
