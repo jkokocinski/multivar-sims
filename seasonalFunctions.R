@@ -92,7 +92,7 @@ findLocalFMax <- function(obj, cutoff){
     stop("obj needs to be of class 'driegert.cmv' or 'Ftest'.")
   }
   
-  fMaxInd <- which(Fval > qf(cutoff, 2, 2*k))
+  fMaxInd <- which(Fval > qf(cutoff, 2, 2*k-2))
   maxes <- c()
   
   if (length(fMaxInd) == 0){
