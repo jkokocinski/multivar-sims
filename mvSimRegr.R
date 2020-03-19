@@ -14,7 +14,7 @@ source("seasonalFunctions.R")
 ######################## parameters for bivariate AR(1) ########################
 # phiMat.r <- matrix(c(0.7,-0.5,0.6,0.2), nrow=2, ncol=2, byrow=TRUE)
 # phiMat.p <- matrix(c(0.7,-0.2,0.5,-0.3), nrow=2, ncol=2, byrow=TRUE)
-# errCovMat.r <- 1 * (diag(1,2) + matrix(c(0,0.55,0.55,0), 2, 2))
+# errCovMat.r <- 1 * (diag(1,2) + 0*matrix(c(0,0.55,0.55,0), 2, 2))
 # errCovMat.p <- 1 * diag(1,2)
 
 ######################## parameters for bivariate AR(2) ########################
@@ -41,7 +41,7 @@ errCovMat.p <- 1e1 * diag(1,2)
 ################## Run the process simulations and regressions #################
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=c(1024), NUM_REGR=100,
+                 numObsVec=c(4000), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=9, numTapers=17,
                  adaptWt=FALSE, embedSines=TRUE,
                  linDepY=FALSE, computeCorr=TRUE, removeLCs=TRUE)
@@ -112,20 +112,21 @@ dev.off()
 
 # Plot sample amplitude cross spectrum for Bartlett and MTM for final rlzn and
 #   and compare to the theoretical.
+N <- X$params.init$numObsVec[1]
+nFFT <- length(X$crossSpec)
 bart.cspec <- with(X, {
-  fft(z=c(respRlzns[,1,params.init$NUM_REGR],rep(0,1024))) *
-    Conj(fft(z=c(X$respRlzns[,2,params.init$NUM_REGR],rep(0,1024)))) / 2048
+  fft(z=c(respRlzns[,1,params.init$NUM_REGR],rep(0,nFFT-numObs))) *
+    Conj(fft(z=c(X$respRlzns[,2,params.init$NUM_REGR],rep(0,nFFT-numObs)))) / nFFT
   }
 )
 plot.lims <- range(c(Mod(bart.cspec[-1])**2, Mod(X$crossSpec)**2, Mod(specs[1,2,])**2))
-specs <- bivARp.spec(phiMat=phiMat.r, V=errCovMat.r, freqs=c(0,seq(1,1024))/2048)
+specs <- bivARp.spec(phiMat=phiMat.r, V=errCovMat.r, freqs=c(0,seq(1,nFFT/2))/nFFT)
 par(mar=c(4,4,1,1))
-plot(x=c(0,seq(1,1024)/2048), y=Mod(bart.cspec[1:1025])**2,
+plot(x=c(0,seq(1,nFFT/2)/nFFT), y=Mod(bart.cspec[1:(nFFT/2+1)])**2,
      type="l", log="y", col="red", ylim=plot.lims,
      xlab="Frequency", ylab="Amplitude Cross Spectrum (Y1,Y2)")
-lines(x=c(0,seq(1,1024)/2048), y=Mod(X$crossSpec[1:1025])**2, col="blue")
-lines(x=c(0,seq(1,1024)/2048), y=Mod(specs[1,2,])**2, col="forestgreen", lwd=2)
-dev.off()
+lines(x=c(0,seq(1,nFFT/2)/nFFT), y=Mod(X$crossSpec[1:(nFFT/2+1)])**2, col="blue")
+lines(x=c(0,seq(1,nFFT/2)/nFFT), y=Mod(specs[1,2,])**2, col="forestgreen", lwd=2)
 
 
 
