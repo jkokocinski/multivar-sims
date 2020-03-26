@@ -25,8 +25,8 @@ importData <- function(prefix, seqInds, suffix="", filext, skip=0) {
   return(theData)
 }
 
-demand <- importData("data/demand/PUB_Demand_", 2003:2016, "", ".csv", skip=3)
-hoep <- importData("data/hoep/PUB_PriceHOEPPredispOR_", 2003:2016, "", ".csv", skip=3)
+demand <- importData("data/demand/PUB_Demand_", 2003:2020, "", ".csv", skip=3)
+hoep <- importData("data/hoep/PUB_PriceHOEPPredispOR_", 2003:2020, "", ".csv", skip=3)
 
 # temperat <- data.frame()
 # for (yr in 2003:2012) {
@@ -94,26 +94,33 @@ multitaper::spec.mtm(ts(iesoData$hoep))
 
 hrNum <- 1:(365*3*24) # hour number vector to be passed to lm as the predictor variable; for removing trend and de-meaning
 
-timeSegs <- 2008:2016
+timeSegs <- 2003:2016
 nts <- length(timeSegs)
 covB.mtap.mat <- covB.bart.mat <- matrix(NA, nts, nts)
+corB.mtap.mat <- corB.bart.mat <- matrix(NA, nts, nts)
 betaHat0Vec <- rep(NA, nts)
-adaptWt <- FALSE # adaptive weigting in mtm cross-spec estimate?
+adaptWt <- TRUE # adaptive weigting in mtm cross-spec estimate?
 
 for (j1 in 2:(nts-1)) {
   for (j2 in j1:(nts-1)) {
-    Y1 <- (iesoData[which(iesoData$year %in% timeSegs[j1+(-1:1)]), "hoep"])[hrNum]
-    Y2 <- (iesoData[which(iesoData$year %in% timeSegs[j2+(-1:1)]), "hoep"])[hrNum]
-    X1 <- (iesoData[which(iesoData$year %in% timeSegs[j1+(-1:1)]), "demand"])[hrNum]
-    X2 <- (iesoData[which(iesoData$year %in% timeSegs[j2+(-1:1)]), "demand"])[hrNum]
+    inds1 <- head(which(iesoData$year %in% timeSegs[j1+(-1:1)]), length(hrNum))
+    inds2 <- head(which(iesoData$year %in% timeSegs[j2+(-1:1)]), length(hrNum))
+    Y1 <- iesoData[inds1, "hoep"]
+    Y2 <- iesoData[inds2, "hoep"]
+    X1 <- iesoData[inds1, "demand"]
+    X2 <- iesoData[inds2, "demand"]
     # X1 <- (weather[which(weather$year %in% timeSegs[j1+(-1:1)]), "temperature"])[hrNum]
     # X2 <- (weather[which(weather$year %in% timeSegs[j2+(-1:1)]), "temperature"])[hrNum]
     
-    # remove linear & quadratic trend; remove mean
-    Y1 <- (lm(Y1~1))$residuals
-    Y2 <- (lm(Y2~1))$residuals
-    X1 <- (lm(X1~1))$residuals
-    X2 <- (lm(X2~1))$residuals
+    # day fo week (DOW) factor variables
+    dow1 <- factor(weekdays(iesoData$datetime[inds1]))
+    dow2 <- factor(weekdays(iesoData$datetime[inds2]))
+    
+    # remove mean and DOW effect
+    Y1 <- (lm(Y1~1+dow1))$residuals
+    Y2 <- (lm(Y2~1+dow2))$residuals
+    X1 <- (lm(X1~1+dow1))$residuals
+    X2 <- (lm(X2~1+dow2))$residuals
     
     numObs <- length(Y1)
     
@@ -125,10 +132,8 @@ for (j1 in 2:(nts-1)) {
     
     bart.ccv.r <- ccf(x=Y1, y=Y2, type="covariance", lag.max=numObs-1, plot=F)
     bart.ccv.r.21 <- rev(bart.ccv.r$acf)
-    covB.bart <- mpi.X1 %*% toepLeftMult2( as.vector(bart.ccv.r$acf),
-                                           as.vector(t(mpi.X2)) )
-    covB.bart.21 <- mpi.X2 %*% toepLeftMult2( as.vector(bart.ccv.r.21),
-                                           as.vector(t(mpi.X1)) )
+    covB.bart <- bilinToep(mpi.X1, as.vector(bart.ccv.r$acf), mpi.X2)
+    covB.bart.21 <- bilinToep(mpi.X2, as.vector(bart.ccv.r.21), mpi.X1)
     
     # update covB Bartlett matrices
     covB.bart.mat[j1,j2] <- covB.bart
@@ -144,10 +149,10 @@ for (j1 in 2:(nts-1)) {
     cs2Obj <- findCommonSines(x=X2, y=Y2, freqThresh=9/numObs, sigCutoff=0.999)
     
     # remove UNcommon LCs in pred. and resp.; additionally remove common LCs in pred.
-    X1.w <- X1 - cs1Obj$fctVals.incoh[,1] - apply(cs1Obj$fctVals.com.x, 1, sum)
-    Y1.w <- Y1 - cs1Obj$fctVals.incoh[,2]
-    X2.w <- X2 - cs2Obj$fctVals.incoh[,1] - apply(cs2Obj$fctVals.com.x, 1, sum)
-    Y2.w <- Y2 - cs2Obj$fctVals.incoh[,2]
+    X1.w <- X1 - 0*cs1Obj$fctVals.incoh[,1] - apply(cs1Obj$fctVals.com.x, 1, sum)
+    Y1.w <- Y1 - 0*cs1Obj$fctVals.incoh[,2] - apply(cs1Obj$fctVals.com.y, 1, sum)
+    X2.w <- X2 - 0*cs2Obj$fctVals.incoh[,1] - apply(cs2Obj$fctVals.com.x, 1, sum)
+    Y2.w <- Y2 - 0*cs2Obj$fctVals.incoh[,2] - apply(cs2Obj$fctVals.com.y, 1, sum)
     
     
     # phase-aligned common LCs in pred. series
@@ -221,8 +226,8 @@ for (j1 in 2:(nts-1)) {
     mtap.ccv.r.21 <- Re(c(tail(mtap.ccv.r.21, numObs-1), head(mtap.ccv.r.21, numObs)))
     
     # \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
-    covB.mtap <- mpi.X1.w.ph[1,] %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2.w.ph[1,])) )
-    covB.mtap.21 <- mpi.X2.w.ph[1,] %*% toepLeftMult2( mtap.ccv.r.21, as.vector(t(mpi.X1.w.ph[1,])) )
+    covB.mtap <- mpi.X1.w %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2.w)) )
+    covB.mtap.21 <- mpi.X2.w %*% toepLeftMult2( mtap.ccv.r.21, as.vector(t(mpi.X1.w)) )
     
     
     
@@ -234,10 +239,17 @@ for (j1 in 2:(nts-1)) {
 }
 
 numRows <- dim(covB.bart.mat)[1] - 2L
-(BC <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows))
-(MC <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows))
+BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
+MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
+BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
+MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
 
-
+# par(mar=c(5.1, 4.1, 4.1, 4.1))
+# plot(BCor, breaks=20, border=NA,
+#      col=c("white",paste(rep("grey",8), seq(20,90,10), sep=""),"black"))
+# par(mar=c(5.1, 4.1, 4.1, 4.1))
+# plot(MCor, breaks=20, border=NA,
+#      col=c("white",paste(rep("grey",8), seq(20,90,10), sep=""),"black"))
 
 
 
