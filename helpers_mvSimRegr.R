@@ -931,14 +931,14 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
       }
       plotText <- "plot(x=result$N-5, y=result$mse.cv.bart, xlab=\"Realization Size\",
            ylab=\"MSE of cov estimator\",
-           log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"goldenrod\", pch=16)
+           log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"red\", pch=16)
       points(x=result$N+5, y=result$mse.cv.mtap, col=\"blue\", pch=17)
       arrows(x0=result$N-5, y0=result$qSE.L.cov.bart, x1=result$N-5, y1=result$qSE.U.cov.bart,
-             length=0.05, angle=90, code=3, lwd=2, col=\"goldenrod\")
+             length=0.05, angle=90, code=3, lwd=2, col=\"red\")
       arrows(x0=result$N+5, y0=result$qSE.L.cov.mtap, x1=result$N+5, y1=result$qSE.U.cov.mtap,
              length=0.05, angle=90, code=3, lwd=2, col=\"blue\")
       legend(\"topright\", legend=c(\"Bartlett\",\"Multitaper\"), pch=c(16,17),
-             col=c(\"goldenrod\",\"blue\"))
+             col=c(\"red\",\"blue\"))
       # text(x=min(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0),
       #      labels=plotComment, family=\"mono\")
       text(x=params.init$numObsVec, y=result$qSE.L.cov.mtap, pos=1, family=\"mono\", col=\"blue\",
