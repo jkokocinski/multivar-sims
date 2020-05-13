@@ -7,11 +7,17 @@ tryCatch(setwd("~/multivar-sims"),
 )
 
 library(mAr)
-require(multitaper)
-require(signal)
+library(multitaper)
+library(signal)
+library(plot.matrix)
+# library(parallel); library(foreach); library(doParallel)
 source("helpers_mvSimRegr.R")
 source("seasonalFunctions.R")
 
+############################### parallel options ###############################
+# numCores <- ceiling(parallel::detectCores()/4)
+# cl <- parallel::makeCluster(numCores)
+# registerDoParallel(cl)
 
 ############################ import data and format ############################
 importData <- function(prefix, seqInds, suffix="", filext, skip=0) {
@@ -79,7 +85,7 @@ weather$hour <- as.integer(substr(weather$time, 12, 13))+1
 
 
 ################################# plot the data ################################
-# png(file="img/demand-hoep_plots.png", width=1024, height=576)
+# png(file="img/demand-hoep_plots.png", width=640, height=720)
 # par(mfrow=c(2,1))
 # par(mar=c(4,4,1,1))
 # plot(x=iesoData$datetime, y=iesoData$demand, type="l",
@@ -89,8 +95,14 @@ weather$hour <- as.integer(substr(weather$time, 12, 13))+1
 # dev.off()
 
 ######################## compute auto- and cross-spectra #######################
-multitaper::spec.mtm(ts(iesoData$demand))
-multitaper::spec.mtm(ts(iesoData$hoep))
+# png(file="img/3_spec-demand-full.png", width=640, height=320)
+# par(mar=c(5,4,1,1))
+# multitaper::spec.mtm(ts(iesoData$demand), nw=9, k=17, main="")
+# dev.off()
+# png(file="img/3_spec-hoep-full.png", width=640, height=320)
+# par(mar=c(5,4,1,1))
+# multitaper::spec.mtm(ts(iesoData$hoep), nw=9, k=17, main="")
+# dev.off()
 
 hrNum <- 1:(365*3*24) # hour number vector to be passed to lm as the predictor variable; for removing trend and de-meaning
 
@@ -102,6 +114,7 @@ betaHat0Vec <- rep(NA, nts)
 adaptWt <- TRUE # adaptive weigting in mtm cross-spec estimate?
 
 for (j1 in 2:(nts-1)) {
+# foreach(j1 = 2:(nts-1)) %dopar% {
   for (j2 in j1:(nts-1)) {
     inds1 <- head(which(iesoData$year %in% timeSegs[j1+(-1:1)]), length(hrNum))
     inds2 <- head(which(iesoData$year %in% timeSegs[j2+(-1:1)]), length(hrNum))
@@ -112,7 +125,7 @@ for (j1 in 2:(nts-1)) {
     # X1 <- (weather[which(weather$year %in% timeSegs[j1+(-1:1)]), "temperature"])[hrNum]
     # X2 <- (weather[which(weather$year %in% timeSegs[j2+(-1:1)]), "temperature"])[hrNum]
     
-    # day fo week (DOW) factor variables
+    # day of week (DOW) factor variables
     dow1 <- factor(weekdays(iesoData$datetime[inds1]))
     dow2 <- factor(weekdays(iesoData$datetime[inds2]))
     
@@ -133,11 +146,22 @@ for (j1 in 2:(nts-1)) {
     bart.ccv.r <- ccf(x=Y1, y=Y2, type="covariance", lag.max=numObs-1, plot=F)
     bart.ccv.r.21 <- rev(bart.ccv.r$acf)
     covB.bart <- bilinToep(mpi.X1, as.vector(bart.ccv.r$acf), mpi.X2)
-    covB.bart.21 <- bilinToep(mpi.X2, as.vector(bart.ccv.r.21), mpi.X1)
+    # covB.bart.21 <- bilinToep(mpi.X2, as.vector(bart.ccv.r.21), mpi.X1)
+    
+    # Bartlett ACVFs for responses; for use in calculating corr
+    bart.acv1.r <- acf(x=Y1, type="covariance", lag.max=numObs-1, plot=FALSE)
+    bart.acv2.r <- acf(x=Y2, type="covariance", lag.max=numObs-1, plot=FALSE)
+    bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
+    bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
+    var.b1.bart <- bilinToep(mpi.X1,  bart.acv1.r, mpi.X1)
+    var.b2.bart <- bilinToep(mpi.X2, bart.acv2.r, mpi.X2)
+    corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
     
     # update covB Bartlett matrices
     covB.bart.mat[j1,j2] <- covB.bart
-    covB.bart.mat[j2,j1] <- covB.bart.21
+    covB.bart.mat[j2,j1] <- covB.bart # covB.bart.21
+    corB.bart.mat[j1,j2] <- corB.bart
+    corB.bart.mat[j2,j1] <- corB.bart
     
     # store beta-hat
     if (j1==j2) {
@@ -161,8 +185,8 @@ for (j1 in 2:(nts-1)) {
     
     mpi.X1.w <- MASS::ginv(X1.w)
     mpi.X2.w <- MASS::ginv(X2.w)
-    mpi.X1.w.ph <- MASS::ginv(cbind(X1.w, cs1.com.x.ph)) # for beta1 vector
-    mpi.X2.w.ph <- MASS::ginv(cbind(X2.w, cs2.com.x.ph)) # for beta2 vector
+    # mpi.X1.w.ph <- MASS::ginv(cbind(X1.w, cs1.com.x.ph)) # for beta1 vector
+    # mpi.X2.w.ph <- MASS::ginv(cbind(X2.w, cs2.com.x.ph)) # for beta2 vector
     
     # compute spec.mtm objects for both response series components
     spec.y1 <- multitaper::spec.mtm(
@@ -227,30 +251,82 @@ for (j1 in 2:(nts-1)) {
     
     # \cov(\hat{\beta}_1, \hat{\beta}_2) -- multitaper-based
     covB.mtap <- mpi.X1.w %*% toepLeftMult2( mtap.ccv.r, as.vector(t(mpi.X2.w)) )
-    covB.mtap.21 <- mpi.X2.w %*% toepLeftMult2( mtap.ccv.r.21, as.vector(t(mpi.X1.w)) )
+    # covB.mtap.21 <- mpi.X2.w %*% toepLeftMult2( mtap.ccv.r.21, as.vector(t(mpi.X1.w)) )
     
+    # autospectra for Y1.w and Y2.w
+    autoSpecEstY1 <- apply(d1*y1*d1*Conj(y1), MARGIN=1, FUN=sum) /
+      apply(d1*d1, MARGIN=1, FUN=sum)
+    autoSpecEstY2 <- apply(d2*y2*d2*Conj(y2), MARGIN=1, FUN=sum) /
+      apply(d2*d2, MARGIN=1, FUN=sum)
     
+    # autospectra over full [0,1) interval
+    autoSpecEstY1 <- c(autoSpecEstY1, rev(Conj(autoSpecEstY1[-1]))[-1])
+    autoSpecEstY2 <- c(autoSpecEstY2, rev(Conj(autoSpecEstY2[-1]))[-1])
+    
+    # ACVFs of Y_1 and Y_2, based on mtm
+    mtap.acv1.r <- fft(z=autoSpecEstY1, inverse=TRUE) / length(autoSpecEstY1)
+    mtap.acv2.r <- fft(z=autoSpecEstY2, inverse=TRUE) / length(autoSpecEstY2)
+    mtap.acv1.r <- Re(c(tail(mtap.acv1.r, numObs-1), head(mtap.acv1.r, numObs)))
+    mtap.acv2.r <- Re(c(tail(mtap.acv2.r, numObs-1), head(mtap.acv2.r, numObs)))
+    
+    var.b1.mtap <- bilinToep(mpi.X1.w, mtap.acv1.r, mpi.X1.w)
+    var.b2.mtap <- bilinToep(mpi.X2.w, mtap.acv2.r, mpi.X2.w)
+    corB.mtap <- covB.mtap / sqrt(var.b1.mtap * var.b2.mtap)
     
     # update covB MTM matrices
     covB.mtap.mat[j1,j2] <- covB.mtap
-    covB.mtap.mat[j2,j1] <- covB.mtap.21
+    covB.mtap.mat[j2,j1] <- covB.mtap # covB.mtap.21
+    corB.mtap.mat[j1,j2] <- corB.mtap
+    corB.mtap.mat[j2,j1] <- corB.mtap
     
+    cat(paste0("# ", Sys.time()), "\tdone ", j1, ",", j2, "\n")
   }
 }
 
+# load(file="demand-result.RData")
+
+betaHat0Vec <- betaHat0Vec[which(!is.na(betaHat0Vec))]
 numRows <- dim(covB.bart.mat)[1] - 2L
 BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
 MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
 BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
 MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
 
-# par(mar=c(5.1, 4.1, 4.1, 4.1))
-# plot(BCor, breaks=20, border=NA,
-#      col=c("white",paste(rep("grey",8), seq(20,90,10), sep=""),"black"))
-# par(mar=c(5.1, 4.1, 4.1, 4.1))
-# plot(MCor, breaks=20, border=NA,
-#      col=c("white",paste(rep("grey",8), seq(20,90,10), sep=""),"black"))
+diag(BCor) <- rep(1,numRows)
+diag(MCor) <- rep(1,numRows)
 
+# stuff for printing in LaTeX
+xtableMatharray(x=BCor, digits=2, display=rep("G", dim(BCov)[2]+1))
+xtableMatharray(x=MCor, digits=2, display=rep("G", dim(BCov)[2]+1))
+
+
+# plot of the beta-hats over time
+png(file="img/3_beta-hats.png", width=640, height=320)
+par(mar=c(4,4,1,1))
+plot(betaHat0Vec, ylab="beta-hat", xlab="time segment middle year", xaxt="n",
+     xlim=0.5+c(0,numRows))
+axis(side=1, at=(1:numRows), labels=rev(rev(timeSegs[-1])[-1]))
+dev.off()
+
+# BCor and MCor matrix "heat maps"
+par(mar=c(5.1, 4.1, 4.1, 4.1))
+plot(BCor, breaks=seq(-1, 0.9, by=0.1),  border=T,
+  col = c("black", paste(rep("grey", 18), seq(5, 95, 5), sep=""),
+          "white")
+)
+par(mar=c(5.1, 4.1, 4.1, 4.1))
+plot(MCor, breaks=seq(-1,0.9,by=0.1), border=T,
+     col=c("black",paste(rep("grey",18), seq(5,95,5), sep=""),"white"))
+
+# using green and red colours
+par(mar=c(4.5, 4, 3.5, 4.1))
+plot(BCor, breaks=seq(-1,1,by=0.1), border=T,
+     col=c(hsv(0,seq(1,0,by=-0.1),1),hsv(1/3,seq(0.1,1,by=0.1),1)),
+     main="Bartlett Correlation Estimates")
+par(mar=c(4.5, 4, 3.5, 4.1))
+plot(MCor, breaks=seq(-1,1,by=0.1), border=T,
+     col=c(hsv(0,seq(1,0,by=-0.1),1),hsv(1/3,seq(0.1,1,by=0.1),1)),
+     main="MTM Correlation Estimates")
 
 
 
