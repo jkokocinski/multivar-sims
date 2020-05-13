@@ -369,7 +369,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # predictor series (X_1,X_2) realization
     bivAR1.p <- as.matrix(mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs))
     
-    freqsToEmbed <- c(90,90)**(-1)
+    freqsToEmbed <- (c(90,90))**(-1)
     
     if (embedSines) {
       bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
@@ -461,7 +461,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         A1 <- mpi.X1.s
         A2 <- mpi.X2.s
       } else if (tp==3) {
-        Yarr <- respRlzns.s
+        Yarr <- respRlzns.s # used for the Bartlett est.; YforSpec are respRlzns
         predRlzn <- bivAR1.p
         A1 <- mpi.X1
         A2 <- mpi.X2
@@ -487,7 +487,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                                                as.vector(t(A2)) )
         
         # \cov(\hat{\beta}_1, \hat{\beta}_2) -- theoretical-based
-        covB.theo <- mpi.X1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(mpi.X2)) )
+        covB.theo <- A1 %*% toepLeftMult2( theo.ccv.r, as.vector(t(A2)) )
         
         if (tp==3) {
           YforSpec <- respRlzns.s.w[,,j]
@@ -870,9 +870,9 @@ plotCCVF <- function(resultList, plotLags, stage="", ave=FALSE) {
        {
          N <- max(bhCovCIs$N)
          plot(x=plotLags, y=theo.ccv.r[plotLags+N], type=\"h\", lwd=2,
-              # ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N],
-              #               bart.ccv.r.last[plotLags+N]) ),
-              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N]) ),
+              ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N],
+                            bart.ccv.r.last[plotLags+N]) ),
+              # ylim=range( c(theo.ccv.r[plotLags+N], mtap.ccv.r.last[plotLags+N]) ),
               ylab=\"CCVF (Y1,Y2)\", xlab=\"Lag\")
          abline(h=0)
          points(x=plotLags, y=mtap.ccv.r.last[plotLags+N], col=\"blue\")
