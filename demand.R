@@ -104,6 +104,8 @@ weather$hour <- as.integer(substr(weather$time, 12, 13))+1
 # multitaper::spec.mtm(ts(iesoData$hoep), nw=9, k=17, main="")
 # dev.off()
 
+
+############################## do the regressions ##############################
 hrNum <- 1:(365*3*24) # hour number vector to be passed to lm as the predictor variable; for removing trend and de-meaning
 
 timeSegs <- 2003:2016
@@ -126,8 +128,8 @@ for (j1 in 2:(nts-1)) {
     # X2 <- (weather[which(weather$year %in% timeSegs[j2+(-1:1)]), "temperature"])[hrNum]
     
     # day of week (DOW) factor variables
-    dow1 <- factor(weekdays(iesoData$datetime[inds1]))
-    dow2 <- factor(weekdays(iesoData$datetime[inds2]))
+    dow1 <- factor(weekdays(iesoData$datetime[inds1], abbreviate=T) %in% c("Sat","Sun"), labels=c("weekday","weekend"))
+    dow2 <- factor(weekdays(iesoData$datetime[inds2], abbreviate=T) %in% c("Sat","Sun"), labels=c("weekday","weekend"))
     
     # remove mean and DOW effect
     Y1 <- (lm(Y1~1+dow1))$residuals
@@ -296,8 +298,8 @@ diag(BCor) <- rep(1,numRows)
 diag(MCor) <- rep(1,numRows)
 
 # stuff for printing in LaTeX
-xtableMatharray(x=BCor, digits=2, display=rep("G", dim(BCov)[2]+1))
-xtableMatharray(x=MCor, digits=2, display=rep("G", dim(BCov)[2]+1))
+xtable::xtableMatharray(x=BCor, digits=2, display=rep("G", dim(BCov)[2]+1))
+xtable::xtableMatharray(x=MCor, digits=2, display=rep("G", dim(BCov)[2]+1))
 
 
 # plot of the beta-hats over time
@@ -329,35 +331,43 @@ plot(MCor, breaks=seq(-1,1,by=0.1), border=T,
      main="MTM Correlation Estimates")
 
 
+############################# confidence intervals #############################
+CIs.mtap.names <- c("beta.hat","uncon.var","condl.var","CI.lower","CI.upper",
+                    "new.CI.lower","new.CI.upper","CI.len","new.CI.len")
+CIs.mtap <- as.data.frame(matrix(NA, numRows, length(CIs.mtap.names)))
+names(CIs.mtap) <- CIs.mtap.names
 
+# CIs for a beta-hat, conditional on all the others
+CIs.mtap$beta.hat <- betaHat0Vec
+CIs.mtap$uncon.var <- diag(MCov)
+for (bh in 1:numRows) {
+  CIs.mtap$condl.var[bh] <- MCov[bh,bh] - MCov[bh,-bh] %*% solve(MCov[-bh,-bh]) %*% MCov[-bh,bh]
+}
+CIs.mtap$CI.lower <- CIs.mtap$beta.hat - qnorm(0.975) * sqrt(CIs.mtap$uncon.var)
+CIs.mtap$CI.upper <- CIs.mtap$beta.hat + qnorm(0.975) * sqrt(CIs.mtap$uncon.var)
+CIs.mtap$new.CI.lower <- CIs.mtap$beta.hat - qnorm(0.975) * sqrt(CIs.mtap$condl.var)
+CIs.mtap$new.CI.upper <- CIs.mtap$beta.hat + qnorm(0.975) * sqrt(CIs.mtap$condl.var)
+CIs.mtap$CI.len <- CIs.mtap$CI.upper - CIs.mtap$CI.lower
+CIs.mtap$new.CI.len <- CIs.mtap$new.CI.upper - CIs.mtap$new.CI.lower
 
+middleyears <- rev(rev(timeSegs[-1])[-1])
 
-######################## deterministic signal detection ########################
-system.time(
-  {
-    seas.demand <- determineSeasonal(data=iesoData$demand, sigCutoff=0.999, padFactor=2)
-  }
-)
+png(file="img/3_beta-hats-CIs-mtap.png", width=640, height=320)
+par(mar=c(4,4,1,1))
+plot(x=middleyears, y=betaHat0Vec, type="p", pch=17,
+     xlim=range(timeSegs)+c(0.5,-0.5),
+     ylim=range(c(CIs.mtap$CI.lower,CIs.mtap$CI.upper)),
+     xlab="time segment middle year", ylab="beta-hat")
+arrows(x0=middleyears, y0=CIs.mtap$CI.lower, x1=middleyears,
+       y1=CIs.mtap$CI.upper, length=0.05, angle=90, code=3, lwd=2, col="gray60")
+arrows(x0=middleyears, y0=CIs.mtap$new.CI.lower, x1=middleyears,
+       y1=CIs.mtap$new.CI.upper,length=0.05, angle=90, code=3, lwd=2, col=1)
+dev.off()
 
-system.time(
-  {
-    seas.hoep <- determineSeasonal(data=iesoData$hoep, sigCutoff=0.999, padFactor=2)
-  }
-)
+# print LaTeX table
+xtable::xtable(x=CIs.mtap, digits=4, display=rep("G", dim(CIs.mtap)[2]+1))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# condl.mean <- (MCov[numRows,numRows])^(-1) * MCov[numRows,-numRows] %*% (cbind(betaHat0Vec[-numRows]))
+condl.var.bart <- BCov[numRows,numRows] - BCov[numRows,-numRows] %*% solve(BCov[-numRows,-numRows]) %*% BCov[-numRows,numRows]
 
 
