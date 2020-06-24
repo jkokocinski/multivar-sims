@@ -279,7 +279,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
                         mtmFixed="NW", timeBandProd=4, numTapers=7, W,
                         adaptWt=FALSE,
                         embedSines=TRUE,
-                        linDepY=FALSE, computeCorr=FALSE, removeLCs=FALSE) {
+                        linDepY=FALSE, removeLCs=FALSE) {
   
   library(mAr) # depends on MASS
   library(multitaper)
@@ -318,18 +318,19 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
   
   # \cov{Y_1,Y_2} from -(N-1) to +(N-1), where N is max(numObsVec); to subset
   maxmaxlag <- max(numObsVec)-1
-  CCVmats.master <- bivARp.ccvf(coefMat=phiMat.r, V=errCovMat.r,
+  CCVmats.master <- bivARp.ccvf(coefMats=phiMat.r, V=errCovMat.r,
                                 maxlag=maxmaxlag)
   
   
   for (n in seq(1,length(numObsVec))) {
     numObs <- numObsVec[n]
-    cat(paste0("################ N=",numObs,"\n"))
+    cat(paste0("################ N=", numObs, " ",
+               paste0(rep("#",60-nchar(numObs)), collapse=""), "\n"))
     
     maxlag <- numObs-1
     if (linDepY) {
       phi <- 0.95 # AR coef for Y_1
-      a <- 2.5 # scale on Y_2
+      a <- 1 #2.5 # scale on Y_2
       varZ.Y1 <- 0.2
       addedNoiseVar.Y2 <- 0.05
       theo.acv1.r <- phi^(abs(seq(-maxlag, maxlag))) * varZ.Y1 / (1-phi^2)
@@ -405,6 +406,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     ############################# generate realizations ############################
     cat(paste0("# ", Sys.time()) ," | generating realizations...\n")
+    pb1 <- txtProgressBar(min=0, max=NUM_REGR, initial=0, char=">", width=80)
     for (j in 1:NUM_REGR) {
       if (linDepY) {
         y1 <- as.numeric(arima.sim(model=list(ar=phi), n=numObs, innov=rnorm(numObs, 0, sd=sqrt(varZ.Y1))))
@@ -434,14 +436,16 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
               sigCutoff=0.999)
             detRespSines <- commonSinesObj$fctVals.com.y
-            if(is.null(detRespSines)) { detRespSines <- cbind(rep(0,1024)) } # to avoid NULLs
+            if(is.null(detRespSines)) { detRespSines <- matrix(0,numObs,2) } # to avoid NULLs
             
             respRlzns.s.w[,p,j] <- bivAR1.r.s[,p] - apply(detRespSines, 1, sum)
           }
           
         } # end if(removeLCs)
       } # end if(embedSines)
+      setTxtProgressBar(pb=pb1, value=j)
     } # end generate realizations
+    setTxtProgressBar(pb=pb1, value=0)
     cat(paste0("# ", Sys.time()) ," | done!\n")
   
   
@@ -449,6 +453,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     ######################### do regressions and estimation ########################
     cat(paste0("# ", Sys.time()) ," | doing regressions and estimation...\n")
+    pb2 <- txtProgressBar(min=0, max=NUM_REGR*(1+embedSines+removeLCs), initial=0, char=">", width=80)
     for (tp in seq(1, 1 + embedSines + removeLCs, 1)) {
       if (tp==1) {
         Yarr <- respRlzns
@@ -461,7 +466,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         A1 <- mpi.X1.s
         A2 <- mpi.X2.s
       } else if (tp==3) {
-        Yarr <- respRlzns.s # used for the Bartlett est.; YforSpec are respRlzns
+        Yarr <- respRlzns.s.w # used for the Bartlett est.; YforSpec are respRlzns
         predRlzn <- bivAR1.p
         A1 <- mpi.X1
         A2 <- mpi.X2
@@ -470,7 +475,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       for (j in 1:NUM_REGR) {
         Y <- Yarr[,,j]
         # regular lin regs
-        if (tp==4) { # do I want to do this? Disabled for now.
+        if (tp==4) { # do I want to do this for tp==3? Disabled for now.
           model1 <- lm(respRlzns.s.w[,1,j] ~ 0 + predRlzn[,1])
           model2 <- lm(respRlzns.s.w[,2,j] ~ 0 + predRlzn[,2])
         } else {
@@ -586,8 +591,9 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         bart.ccv.r.avg <- bart.ccv.r.avg + bart.ccv.r
         mtap.ccv.r.avg <- mtap.ccv.r.avg + mtap.ccv.r
         
-        
+        setTxtProgressBar(pb=pb2, value=(tp-1)*NUM_REGR + j)
       } # end for (j in 1:NUM_REGR)
+      setTxtProgressBar(pb=pb2, value=0)
     
       bart.ccv.r.avg <- bart.ccv.r.avg / NUM_REGR
       mtap.ccv.r.avg <- mtap.ccv.r.avg / NUM_REGR
@@ -673,7 +679,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         result[k,c("var.cor.bart","var.cor.mtap")]
       
       # sample quantiles for the squared errors; approximate CIs
-      lp <- 0.02; up <- 0.98 # lower and upper probs.
+      lp <- 0.025; up <- 0.975 # lower and upper probs.
       qSE.cv <- apply(X=dfObj[,c("se.cv.bart","se.cv.mtap")], MARGIN=2,
                       FUN=quantile, c(up,lp))
       result[k,c("qSE.U.cov.bart","qSE.U.cov.mtap")] <- qSE.cv[1,]
@@ -701,7 +707,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     } else {
       stop("impossible tp")
     }
-  }
+  } # end for tp (results)
   rm(result, betas,betas.head, betas.newRow)
   # rm(list=ls()[which(grepl("bivAR1", ls()))])
   
@@ -938,7 +944,7 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
       arrows(x0=result$N+5, y0=result$qSE.L.cov.mtap, x1=result$N+5, y1=result$qSE.U.cov.mtap,
              length=0.05, angle=90, code=3, lwd=2, col=\"blue\")
       legend(\"topright\", legend=c(\"Bartlett\",\"Multitaper\"), pch=c(16,17),
-             col=c(\"red\",\"blue\"))
+             col=c(\"red\",\"blue\"), horiz=TRUE)
       # text(x=min(params.init$numObsVec), y=par()$yaxp[1], adj=c(0,0),
       #      labels=plotComment, family=\"mono\")
       text(x=params.init$numObsVec, y=result$qSE.L.cov.mtap, pos=1, family=\"mono\", col=\"blue\",
@@ -1036,6 +1042,47 @@ plotCIcompare <- function(resultList, type="cov", estType, Nind=1, writeImgFile=
 } # end plotCIs
 
 
+################################### plotCovB ###################################
+#
+# Plot the covariances of the beta.hat.1 and beta.hat.2 fitted coefficients
+#   from the simulations/regressions.
+#
+plotCovB <- function(resultList, type="cov", stage="", Nind=1) {
+  stopifnot(length(Nind)==1)
+  stopifnot(Nind-floor(Nind)==0)
+  if (stage=="") {
+    suffix <- ""
+  } else if (stage=="s") {
+    suffix <- ".s"
+  } else if (stage=="s.w") {
+    suffix <- ".s.w"
+  } else {
+    stop("Set a valid `stage`.")
+  }
+  
+  plotText <- "with(resultList,
+  {
+    with(betasOverN[[Nind]],
+      {
+        plot(cv.bart, ylim=range(c(cv.bart, cv.mtap, cv.theo, bhCovCIs$smpl.cov[1])),
+             col=\"red\", xlab=\"Regression #\", ylab=\"cov(b1,b2)\")
+        points(x=1:length(cv.mtap), y=cv.mtap, col=\"blue\")
+        abline(h=cv.theo[1], col=\"forestgreen\", lwd=2)
+      })
+    abline(h=bhCovCIs$smpl.cov[1], col=\"goldenrod3\", lty=2)
+  })"
+  
+  if (type=="cor") {
+    plotText <- gsub("cov", "cor", plotText)
+    plotText <- gsub("cv", "cor", plotText)
+  }
+  plotText <- gsub("bhCovCIs", paste0("bhCovCIs", suffix), plotText)
+  plotText <- gsub("betasOverN", paste0("betasOverN", suffix), plotText)
+  
+  par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
+  eval(parse(text=plotText)) # produce the plot
+} # end plotCovB
+
 
 ################################## bivARp.spec #################################
 #
@@ -1064,3 +1111,50 @@ bivARp.spec <- function(phiMat, V=diag(1,2), freqs=seq(0,0.5,0.01)) {
   return(specMtx)
 } # end bivARp.spec
 
+
+################################### prewhiten ##################################
+#
+# Function to pre-whiten a univariate time series.
+#
+prewhiten <- function(x, sigLevel) {
+  stopifnot(length(x)>0)
+  N <- length(x)
+  if(missing(sigLevel)) { sigLevel <- 1-1/N }
+  stopifnot(abs(sigLevel-0.5) < 0.5)
+  
+  seas <- determineSeasonal(x, sigCutoff=sigLevel)
+  
+  detectedSines <- apply(seas$sinusoidData, 1, sum)
+  
+  x.ns <- x - detectedSines - mean(x)
+  
+  pilotSpec <- spec.mtm(ts(x.ns), nw=10, k=19, returnInternals=TRUE, plot=FALSE)
+  pilotSpec.full <- c(pilotSpec$spec, rev(pilotSpec$spec[-1])[-1])
+  theACVF <- Re(fft(pilotSpec.full, inverse=TRUE)) / length(pilotSpec.full)
+  
+  ARcoefs <- acf2AR(head(theACVF,9))
+  x.ns.filt <- stats::filter(x=x.ns, filter=c(0,ARcoefs[1,1]), sides=1)
+  x.ns.resid <- x.ns - x.ns.filt
+  x.ns.resid <- x.ns.resid[which(!is.na(x.ns.resid))]
+  
+  varARresid <- var(spec.mtm(ts(x.ns.resid), plot=F)$spec)
+  
+  p.best <- 1
+  for (p in 2:8) {
+    new.x.ns.filt <- stats::filter(x=x.ns, filter=c(0,ARcoefs[p,(1:p)]), sides=1)
+    new.x.ns.resid <- x.ns - new.x.ns.filt
+    new.x.ns.resid <- new.x.ns.resid[which(!is.na(new.x.ns.resid))]
+    
+    newVar <- var(spec.mtm(ts(new.x.ns.resid), plot=F)$spec)
+    
+    if (newVar < varARresid) {
+      p.best <- p
+      x.ns.resid <- new.x.ns.resid
+      varARresid <- newVar
+    }
+  }
+  
+  x.pw <- c(x.ns.resid, rep(0,p.best)) + detectedSines
+  
+  return(x.pw)
+} # end prewhiten
