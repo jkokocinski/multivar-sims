@@ -4,11 +4,12 @@
 # Depends on sigCutoff (a value between 0 and 1, probably want it around 0.99 ?)
 # Set deltat appropriately to get frequency in "cycles per unit"
 ## The cow example was "cycles per month", deltat was 1 in that case.
-
+#
 # Example - if your data is sampled every week, you could use
 ## deltat = 1, and get "cycles per week"
 ## OR
-## deltat = 7 and get "cycles per day" (I think... ) Compare with multitaper to make sure
+## deltat = 7 and get "cycles per day" (I think...) Compare with multitaper to
+## make sure
 #
 ############################## end Dave R comment ##############################
 #
