@@ -65,23 +65,24 @@ remove(demand, hoep) # clean up
 iesoData$demand <- as.numeric(iesoData$demand)
 iesoData$hoep <- gsub(",", "", iesoData$hoep) # remove thousands separator
 iesoData$hoep <- as.numeric(iesoData$hoep)
+iesoData$log.hoep <- log(iesoData$hoep + abs(min(iesoData$hoep)) + 1)
 
 iesoData <- iesoData[ with(iesoData, { order(year, month, day, hour) }), ]
 row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
 
-# temperature data
+# # temperature data
 # temperat <- temperat[,(6:10)]
 # temperat[,4] <- as.numeric(substr(x=temperat[,4], start=1, stop=2)) # convert time to integer
 # names(temperat) <- c("year","month","day","hour","temp")
-#
-# weather data from SSC case study
-weather <- readxl::read_xlsx(path="data/ssc/ssc2020_hourly_weather.xlsx", sheet=2,
-                             col_names=TRUE, trim_ws=TRUE, progress=TRUE)
-weather <- as.data.frame(weather)
-weather$year <- as.integer(substr(weather$time, 1, 4))
-weather$month <- as.integer(substr(weather$time, 6, 7))
-weather$day <- as.integer(substr(weather$time, 9, 10))
-weather$hour <- as.integer(substr(weather$time, 12, 13))+1
+# 
+# # weather data from SSC case study
+# weather <- readxl::read_xlsx(path="data/ssc/ssc2020_hourly_weather.xlsx", sheet=2,
+#                              col_names=TRUE, trim_ws=TRUE, progress=TRUE)
+# weather <- as.data.frame(weather)
+# weather$year <- as.integer(substr(weather$time, 1, 4))
+# weather$month <- as.integer(substr(weather$time, 6, 7))
+# weather$day <- as.integer(substr(weather$time, 9, 10))
+# weather$hour <- as.integer(substr(weather$time, 12, 13))+1
 
 
 ################################# plot the data ################################
@@ -108,11 +109,11 @@ weather$hour <- as.integer(substr(weather$time, 12, 13))+1
 ############################## do the regressions ##############################
 hrNum <- 1:(365*3*24) # hour number vector to be passed to lm as the predictor variable; for removing trend and de-meaning
 
-timeSegs <- 2003:2016
+timeSegs <- 2003:2010
 nts <- length(timeSegs)
 covB.mtap.mat <- covB.bart.mat <- matrix(NA, nts, nts)
 corB.mtap.mat <- corB.bart.mat <- matrix(NA, nts, nts)
-betaHat0Vec <- rep(NA, nts)
+betaHat0Vec.new <- betaHat0Vec <- rep(NA, nts)
 adaptWt <- TRUE # adaptive weigting in mtm cross-spec estimate?
 
 for (j1 in 2:(nts-1)) {
@@ -170,9 +171,15 @@ for (j1 in 2:(nts-1)) {
       betaHat0Vec[j1] <- mpi.X1 %*% Y1
     }
     
+    # prewhitened series
+    X1.pw <- prewhiten(X1, sigLevel=0.99)
+    Y1.pw <- prewhiten(Y1, sigLevel=0.99)
+    X2.pw <- prewhiten(X2, sigLevel=0.99)
+    Y2.pw <- prewhiten(Y2, sigLevel=0.99)
+    
     # find common sinusoidal components
-    cs1Obj <- findCommonSines(x=X1, y=Y1, freqThresh=9/numObs, sigCutoff=0.999)
-    cs2Obj <- findCommonSines(x=X2, y=Y2, freqThresh=9/numObs, sigCutoff=0.999)
+    cs1Obj <- findCommonSines(x=X1.pw, y=Y1.pw, freqThresh=9/numObs, sigCutoff=0.99)
+    cs2Obj <- findCommonSines(x=X2.pw, y=Y2.pw, freqThresh=9/numObs, sigCutoff=0.99)
     
     # remove UNcommon LCs in pred. and resp.; additionally remove common LCs in pred.
     X1.w <- X1 - 0*cs1Obj$fctVals.incoh[,1] - apply(cs1Obj$fctVals.com.x, 1, sum)
@@ -188,15 +195,20 @@ for (j1 in 2:(nts-1)) {
     mpi.X1.w <- MASS::ginv(X1.w)
     mpi.X2.w <- MASS::ginv(X2.w)
     # mpi.X1.w.ph <- MASS::ginv(cbind(X1.w, cs1.com.x.ph)) # for beta1 vector
-    # mpi.X2.w.ph <- MASS::ginv(cbind(X2.w, cs2.com.x.ph)) # for beta2 vector
+    # mpi.X2.w.ph <- MASS::ginv(cbind(X2.w, cs2.com.x.ph)) # for beta2 vectorb
+    
+    # store beta-hat (new)
+    if (j1==j2) {
+      betaHat0Vec.new[j1] <- mpi.X1.w %*% Y1.w
+    }
     
     # compute spec.mtm objects for both response series components
     spec.y1 <- multitaper::spec.mtm(
-      timeSeries=ts(Y1.w), nw=9, k=17, adaptiveWeighting=TRUE, Ftest=TRUE,
+      timeSeries=ts(Y1.w), nw=9, k=17, adaptiveWeighting=TRUE,
       returnInternals=TRUE, plot=FALSE
     )
     spec.y2 <- multitaper::spec.mtm(
-      timeSeries=ts(Y2.w), nw=9, k=17, adaptiveWeighting=TRUE, Ftest=TRUE,
+      timeSeries=ts(Y2.w), nw=9, k=17, adaptiveWeighting=TRUE,
       returnInternals=TRUE, plot=FALSE
     )
     
@@ -287,12 +299,12 @@ for (j1 in 2:(nts-1)) {
 
 # load(file="demand-result.RData")
 
-betaHat0Vec <- betaHat0Vec[which(!is.na(betaHat0Vec))]
+# betaHat0Vec <- betaHat0Vec[which(!is.na(betaHat0Vec))]
 numRows <- dim(covB.bart.mat)[1] - 2L
-BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
-MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
-BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
-MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
+# BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
+# MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
+# BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
+# MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
 
 diag(BCor) <- rep(1,numRows)
 diag(MCor) <- rep(1,numRows)
@@ -323,12 +335,59 @@ plot(MCor, breaks=seq(-1,0.9,by=0.1), border=T,
 # using green and red colours
 par(mar=c(4.5, 4, 3.5, 4.1))
 plot(BCor, breaks=seq(-1,1,by=0.1), border=T,
-     col=c(hsv(0,seq(1,0,by=-0.1),1),hsv(1/3,seq(0.1,1,by=0.1),1)),
+     col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
      main="Bartlett Correlation Estimates")
 par(mar=c(4.5, 4, 3.5, 4.1))
 plot(MCor, breaks=seq(-1,1,by=0.1), border=T,
-     col=c(hsv(0,seq(1,0,by=-0.1),1),hsv(1/3,seq(0.1,1,by=0.1),1)),
+     col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
      main="MTM Correlation Estimates")
+
+pdf(file="img/3_BCor-MCor.pdf", width=8, height=6)
+par(mar=c(4.5, 4, 2, 4.1))
+plot(BCor * lower.tri(BCor, diag=F) + MCor * upper.tri(MCor, diag=T),
+     breaks=seq(-1,1,by=0.1), border=T,
+     col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
+     main="Bartlett/MTM Correlation Estimates", digits=2)
+dev.off()
+
+# differenced series of beta-hats
+b.diff <- diff(betaHat0Vec, lag=1)
+b.diff.2 <- diff(betaHat0Vec, lag=2)
+
+MCov.diff <- matrix(NA, length(b.diff), length(b.diff))
+MCov.diff.2 <- matrix(NA, length(b.diff.2), length(b.diff.2))
+
+# MCor for the differenced series of beta-hats
+MCor.diff <- matrix(NA, length(b.diff), length(b.diff))
+for (j in 1:length(b.diff)) {
+  for (l in 1:length(b.diff)) {
+    MCov.diff[j,l] <- MCov[j+1,l+1] + MCov[j,l] - MCov[j+1,l] - MCov[j,l+1]
+    MCor.diff[j,l] <- MCov.diff[j,l] /
+      sqrt(MCov[j+1,j+1]+MCov[j,j]-2*MCov[j+1,j]) /
+      sqrt(MCov[l+1,l+1]+MCov[l,l]-2*MCov[l+1,l])
+  }
+}
+diag(MCor.diff) <- 1
+
+pdf(file="img/3_MCor-diff-vals.pdf", width=8, height=6)
+par(mar=c(4.5, 4, 3.5, 4.1))
+plot(MCor.diff, breaks=seq(-1,1,by=0.1), border=T,
+     col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
+     main="MTM Correlation Estimates for Differenced beta-hat series",
+     digits=2)
+dev.off()
+
+# MCor for the 2nd-differenced series of beta-hats
+MCor.diff.2 <- matrix(NA, length(b.diff.2), length(b.diff.2))
+for (j in 1:length(b.diff.2)) {
+  for (l in 1:length(b.diff.2)) {
+    MCov.diff.2[j,l] <- MCov.diff[j+1,l+1] + MCov.diff[j,l] - MCov.diff[j+1,l] - MCov.diff[j,l+1]
+    MCor.diff.2[j,l] <- MCov.diff.2[j,l] /
+      sqrt(MCov.diff[j+1,j+1]+MCov.diff[j,j]-2*MCov.diff[j+1,j]) /
+      sqrt(MCov.diff[l+1,l+1]+MCov.diff[l,l]-2*MCov.diff[l+1,l])
+  }
+}
+diag(MCor.diff.2) <- 1
 
 
 ############################# confidence intervals #############################
