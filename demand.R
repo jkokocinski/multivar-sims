@@ -109,12 +109,17 @@ row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
 ############################## do the regressions ##############################
 hrNum <- 1:(365*3*24) # hour number vector to be passed to lm as the predictor variable; for removing trend and de-meaning
 
-timeSegs <- 2003:2010
+timeBandProd <- 9
+numTapers <- 17
+adaptWt <- TRUE # adaptive weigting in mtm cross-spec estimate?
+
+timeSegs <- 2003:2016
 nts <- length(timeSegs)
 covB.mtap.mat <- covB.bart.mat <- matrix(NA, nts, nts)
 corB.mtap.mat <- corB.bart.mat <- matrix(NA, nts, nts)
 betaHat0Vec.new <- betaHat0Vec <- rep(NA, nts)
-adaptWt <- TRUE # adaptive weigting in mtm cross-spec estimate?
+betaHatLCs <- matrix(NA, nrow=nts, ncol=3) # 3 columns for persistent LCs (daily, semidaily, octaweekly)
+betaHatLCs.jk <- array(NA, dim=c(dim(betaHatLCs), 7))
 
 for (j1 in 2:(nts-1)) {
 # foreach(j1 = 2:(nts-1)) %dopar% {
@@ -172,14 +177,40 @@ for (j1 in 2:(nts-1)) {
     }
     
     # prewhitened series
-    X1.pw <- prewhiten(X1, sigLevel=0.99)
-    Y1.pw <- prewhiten(Y1, sigLevel=0.99)
-    X2.pw <- prewhiten(X2, sigLevel=0.99)
-    Y2.pw <- prewhiten(Y2, sigLevel=0.99)
+    X1.pw <- prewhiten(X1, sigLevel=1-1/numObs)
+    Y1.pw <- prewhiten(Y1, sigLevel=1-1/numObs)
+    X2.pw <- prewhiten(X2, sigLevel=1-1/numObs)
+    Y2.pw <- prewhiten(Y2, sigLevel=1-1/numObs)
     
     # find common sinusoidal components
-    cs1Obj <- findCommonSines(x=X1.pw, y=Y1.pw, freqThresh=9/numObs, sigCutoff=0.99)
-    cs2Obj <- findCommonSines(x=X2.pw, y=Y2.pw, freqThresh=9/numObs, sigCutoff=0.99)
+    cs1Obj <- findCommonSines(x=X1.pw, y=Y1.pw, freqThresh=1/numObs, sigCutoff=1-1/numObs, jackknife=TRUE)
+    if (j1==j2) {
+      cs2Obj <- cs1Obj
+    } else {
+      cs2Obj <- findCommonSines(x=X2.pw, y=Y2.pw, freqThresh=1/numObs, sigCutoff=1-1/numObs, jackknife=TRUE)
+    }
+    
+    # indices in the params data.frame of the persistent LCs
+    LCs.X1.ind <- c(which(abs(cs1Obj$paramsX.com$freq-1/24) < 1/numObs),
+                    which(abs(cs1Obj$paramsX.com$freq-1/12) < 1/numObs),
+                    which(abs(cs1Obj$paramsX.com$freq-1/21) < 1/numObs))
+    LCs.Y1.ind <- c(which(abs(cs1Obj$paramsY.com$freq-1/24) < 1/numObs),
+                    which(abs(cs1Obj$paramsY.com$freq-1/12) < 1/numObs),
+                    which(abs(cs1Obj$paramsY.com$freq-1/21) < 1/numObs))
+    LCs.X2.ind <- c(which(abs(cs2Obj$paramsX.com$freq-1/24) < 1/numObs),
+                    which(abs(cs2Obj$paramsX.com$freq-1/12) < 1/numObs),
+                    which(abs(cs2Obj$paramsX.com$freq-1/21) < 1/numObs))
+    LCs.Y2.ind <- c(which(abs(cs2Obj$paramsY.com$freq-1/24) < 1/numObs),
+                    which(abs(cs2Obj$paramsY.com$freq-1/12) < 1/numObs),
+                    which(abs(cs2Obj$paramsY.com$freq-1/21) < 1/numObs))
+    
+    # beta-hat for each persistent LC
+    if (j1==j2) {
+      for (l in 1:3) {
+        betaHatLCs[j1,l] <- cs1Obj$paramsY.com$amp[LCs.Y1.ind[l]] / cs1Obj$paramsX.com$amp[LCs.X1.ind[l]]
+        betaHatLCs.jk[j1,l,] <- cs1Obj$paramsY.com.jk[LCs.Y1.ind[l],2,] / cs1Obj$paramsX.com$amp[LCs.X1.ind[l]]
+      }
+    }
     
     # remove UNcommon LCs in pred. and resp.; additionally remove common LCs in pred.
     X1.w <- X1 - 0*cs1Obj$fctVals.incoh[,1] - apply(cs1Obj$fctVals.com.x, 1, sum)
@@ -195,7 +226,7 @@ for (j1 in 2:(nts-1)) {
     mpi.X1.w <- MASS::ginv(X1.w)
     mpi.X2.w <- MASS::ginv(X2.w)
     # mpi.X1.w.ph <- MASS::ginv(cbind(X1.w, cs1.com.x.ph)) # for beta1 vector
-    # mpi.X2.w.ph <- MASS::ginv(cbind(X2.w, cs2.com.x.ph)) # for beta2 vectorb
+    # mpi.X2.w.ph <- MASS::ginv(cbind(X2.w, cs2.com.x.ph)) # for beta2 vector
     
     # store beta-hat (new)
     if (j1==j2) {
@@ -204,11 +235,11 @@ for (j1 in 2:(nts-1)) {
     
     # compute spec.mtm objects for both response series components
     spec.y1 <- multitaper::spec.mtm(
-      timeSeries=ts(Y1.w), nw=9, k=17, adaptiveWeighting=TRUE,
+      timeSeries=ts(Y1.w), nw=timeBandProd, k=numTapers, adaptiveWeighting=TRUE,
       returnInternals=TRUE, plot=FALSE
     )
     spec.y2 <- multitaper::spec.mtm(
-      timeSeries=ts(Y2.w), nw=9, k=17, adaptiveWeighting=TRUE,
+      timeSeries=ts(Y2.w), nw=timeBandProd, k=numTapers, adaptiveWeighting=TRUE,
       returnInternals=TRUE, plot=FALSE
     )
     
@@ -299,8 +330,10 @@ for (j1 in 2:(nts-1)) {
 
 # load(file="demand-result.RData")
 
-# betaHat0Vec <- betaHat0Vec[which(!is.na(betaHat0Vec))]
 numRows <- dim(covB.bart.mat)[1] - 2L
+betaHat0Vec <- betaHat0Vec.new[which(!is.na(betaHat0Vec.new))]
+betaHatLCs <- betaHatLCs[-c(1,dim(betaHatLCs)[1]),]
+betaHatLCs.jk <- betaHatLCs.jk[-c(1,dim(betaHatLCs.jk)[1]),,]
 # BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
 # MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
 # BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
@@ -308,6 +341,8 @@ numRows <- dim(covB.bart.mat)[1] - 2L
 
 diag(BCor) <- rep(1,numRows)
 diag(MCor) <- rep(1,numRows)
+
+# save(betaHat0Vec, BCov, MCov, BCor, MCor, betaHatLCs, betaHatLCs.jk, file="demand-result.RData")
 
 # stuff for printing in LaTeX
 xtable::xtableMatharray(x=BCor, digits=2, display=rep("G", dim(BCov)[2]+1))
