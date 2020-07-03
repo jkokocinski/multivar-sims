@@ -757,17 +757,18 @@ embedSinusoids <- function(input, freqs, amps, ampScale) {
 #
 # findCommonSines : Run the determineSeasonal function on two time series to
 #   find line components in each, then identify those that are 'common' in terms
-#   of frequency.
+#   of frequency. Includes jackknifing of amplitude and phase parameters though
+#   the determineSeasonal function (by default it is turned off here).
 #
-findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
+findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff, jackknife=FALSE) {
   stopifnot(length(x)==length(y))
   
   source("seasonalFunctions.R")
   
   suppressWarnings(
     {
-      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff)
-      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff)
+      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff, jackknife=jackknife)
+      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff, jackknife=jackknife)
     }
   )
   
@@ -835,12 +836,25 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff) {
     paramsY.com <- paramsY.com[keepInds.y,]
     fctVals.com.x.ph <- as.matrix(fctVals.com.x.ph[,keepInds.x])
     
+    # jackknifed amps and phases
+    if (jackknife) {
+      paramsX.com.jk <- seas.x$phaseAmplitudeInfo.jk[commonFreqInds[,1],,]
+      paramsY.com.jk <- seas.y$phaseAmplitudeInfo.jk[commonFreqInds[,2],,]
+      paramsX.com.jk <- paramsX.com.jk[keepInds.x,,] # removing dupes
+      paramsY.com.jk <- paramsY.com.jk[keepInds.y,,]
+    } else {
+      paramsX.com.jk <- NULL
+      paramsY.com.jk <- NULL
+    }
+    
     return( list(fctVals.com.x=fctVals.com.x,
                  fctVals.com.y=fctVals.com.y,
                  paramsX.com=paramsX.com,
                  paramsY.com=paramsY.com,
                  fctVals.incoh=fctVals.incoh,
-                 fctVals.com.x.ph=fctVals.com.x.ph)
+                 fctVals.com.x.ph=fctVals.com.x.ph,
+                 paramsX.com.jk=paramsX.com.jk,
+                 paramsY.com.jk=paramsY.com.jk)
           )
   }
 } # end findCommonSines
