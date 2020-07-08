@@ -370,14 +370,14 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     # predictor series (X_1,X_2) realization
     bivAR1.p <- as.matrix(mAr.sim(w=rep(0,2), A=phiMat.p, C=errCovMat.p, N=numObs))
     
-    freqsToEmbed <- (c(90,90))**(-1)
+    freqsToEmbed <- (c(24,24))**(-1) # for sinusoids in components 1 & 2
     
     if (embedSines) {
       bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
                                    amps=sqrt(diag(errCovMat.p)), ampScale=8)
-      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(90,90)**(-1),
+      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(12,12)**(-1),
       #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.7)
-      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(45,45)**(-1),
+      # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(21,21)**(-1),
       #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.2)
       # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(20,30)**(-1),
       #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.05)
@@ -423,9 +423,9 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       if (embedSines) {
         bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=freqsToEmbed,
                                      amps=sqrt(diag(errCovMat.r)), ampScale=10)
-        # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(90,90)**(-1),
+        # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(12,12)**(-1),
         #                              amps=diag(errCovMat.r), ampScale=0.25)
-        # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(45,45)**(-1),
+        # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(21,21)**(-1),
         #                              amps=diag(errCovMat.r), ampScale=0.1)
         respRlzns.s[,,j] <- bivAR1.r.s
         
@@ -434,7 +434,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
           for (p in 1:2) {
             commonSinesObj <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
-              sigCutoff=0.999)
+              sigCutoff=1-1/numObs)
             detRespSines <- commonSinesObj$fctVals.com.y
             if(is.null(detRespSines)) { detRespSines <- matrix(0,numObs,2) } # to avoid NULLs
             
@@ -999,23 +999,29 @@ plotCIcompare <- function(resultList, type="cov", estType, Nind=1, writeImgFile=
     {
       if (estType=="bart") {
         pType <- 16
-        plotCol <- "goldenrod"
+        plotCol <- "red"
       } else if (estType=="mtap") {
+        pType <- 17
+        plotCol <- "blue"
+      } else if (estType=="both") {
         pType <- 17
         plotCol <- "blue"
       } else {
         stop("Set a valid `estType`: either \"bart\" or \"mtap\".")
       }
       
-      stages <- 1:3 # c("orig.","with LCs","whitened") # labels for x-axis
+      stages <- 1:3
         
       # MSE plot
       CIendpointsStr <- paste0(
         paste0(
           rep("bhCovCIs", 6), rep(c("", ".s", ".s.w"), 2), "$qSE.",
-          rep(c("L", "U"), each = 3), ".", type, ".", estType, "[Nind]"
+          rep(c("L", "U"), each = 3), ".", type, ".", ifelse(estType=="both", "mtap", estType), "[Nind]"
         ),
         collapse = ",\n")
+      if (estType=="both") {
+        CIendpointsStr <- paste0(CIendpointsStr, ",\n", gsub("\\.mtap", ".bart", CIendpointsStr))
+      }
       MSE.plotLims <- eval(parse(text = paste0("range( c(",
                                                CIendpointsStr, ") )")))
       if (writeImgFile) {
@@ -1024,31 +1030,57 @@ plotCIcompare <- function(resultList, type="cov", estType, Nind=1, writeImgFile=
       }
       plotText <- "plot(x=stages, y=rep(bhCovCIs$mse.cv.mtap[Nind],3), xlab=\"Realization Type\",
            ylab=\"SE of cov estimator\", xlim=c(0.5,3.5), xaxt=\"n\",
-           log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"white\")
-      points(x=stages[1], y=bhCovCIs$mse.cv.mtap[Nind], col=plotCol, pch=pType)
+           log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"white\")"
+      pointsText <- "points(x=stages[1], y=bhCovCIs$mse.cv.mtap[Nind], col=plotCol, pch=pType)
       points(x=stages[2], y=bhCovCIs.s$mse.cv.mtap[Nind], col=plotCol, pch=pType)
-      points(x=stages[3], y=bhCovCIs.s.w$mse.cv.mtap[Nind], col=plotCol, pch=pType)
-      arrows(x0=stages[1], y0=bhCovCIs$qSE.L.cov.mtap[Nind], x1=stages[1], y1=bhCovCIs$qSE.U.cov.mtap[Nind],
+      points(x=stages[3], y=bhCovCIs.s.w$mse.cv.mtap[Nind], col=plotCol, pch=pType)"
+      arrowsText <- "arrows(x0=stages[1], y0=bhCovCIs$qSE.L.cov.mtap[Nind], x1=stages[1], y1=bhCovCIs$qSE.U.cov.mtap[Nind],
              length=0.05, angle=90, code=3, lwd=2, col=plotCol)
       arrows(x0=stages[2], y0=bhCovCIs.s$qSE.L.cov.mtap[Nind], x1=stages[2], y1=bhCovCIs.s$qSE.U.cov.mtap[Nind],
              length=0.05, angle=90, code=3, lwd=2, col=plotCol)
       arrows(x0=stages[3], y0=bhCovCIs.s.w$qSE.L.cov.mtap[Nind], x1=stages[3], y1=bhCovCIs.s.w$qSE.U.cov.mtap[Nind],
-             length=0.05, angle=90, code=3, lwd=2, col=plotCol)
-      # legend(\"topright\", legend=c(\"Bartlett\",\"Multitaper\"), pch=c(16,17),
-      #        col=c(\"goldenrod\",\"blue\"))"
+             length=0.05, angle=90, code=3, lwd=2, col=plotCol)"
+      legendText <- "legend(\"topright\", legend=c(\"Bartlett\",\"Multitaper\"), pch=c(16,17),
+            col=c(\"red\",\"blue\"))"
       
       if (type=="cor") {
         plotText <- gsub("cov", "cor", plotText)
         plotText <- gsub("cv", "cor", plotText)
+        pointsText <- gsub("cov", "cor", pointsText)
+        pointsText <- gsub("cv", "cor", pointsText)
+        arrowsText <- gsub("cov", "cor", arrowsText)
+        arrowsText <- gsub("cv", "cor", arrowsText)
       }
       if (estType=="bart") {
-        plotText <- gsub(".mtap", ".bart", plotText)
+        plotText <- gsub("\\.mtap", ".bart", plotText)
+        pointsText <- gsub("\\.mtap", ".bart", pointsText)
+        arrowsText <- gsub("\\.mtap", ".bart", arrowsText)
+      } else if (estType=="both") {
+        horiOffset <- 0.05
+        pointsText <- gsub("x=", paste0("x=+", horiOffset, "+"), pointsText)
+        arrowsText <- gsub("x0=", paste0("x0=+", horiOffset, "+"), arrowsText)
+        arrowsText <- gsub("x1=", paste0("x1=+", horiOffset, "+"), arrowsText)
+        pointsText.b <- gsub("\\.mtap", ".bart", pointsText)
+        arrowsText.b <- gsub("\\.mtap", ".bart", arrowsText)
+        pointsText.b <- gsub("x=+", "x=-", pointsText.b)
+        arrowsText.b <- gsub("x0=\\+", "x0=-", arrowsText.b)
+        arrowsText.b <- gsub("x1=\\+", "x1=-", arrowsText.b)
+        
+        pointsText.b <- gsub("plotCol", "\"red\"", pointsText.b)
+        arrowsText.b <- gsub("plotCol", "\"red\"", arrowsText.b)
+        pointsText.b <- gsub("pType", "16", pointsText.b)
+        
+        pointsText <- paste0(pointsText, "\n", pointsText.b)
+        arrowsText <- paste0(arrowsText, "\n", arrowsText.b)
       }
       
       # layout(matrix(c(1,1,1,1,2,2), 3, 2, byrow = TRUE))
       par(mar=c(4,4,1,1), mgp=c(2.5, 1, 0))
-      eval(parse(text=plotText)) # produce the plot
-      axis(side=1, at=1:3, labels=c("orig.","with LCs","whitened")) # make x-axis
+      suppressWarnings({
+        eval(parse(text=paste(plotText, pointsText, arrowsText, sep="\n"))) # produce the plot
+      })
+      if (estType=="both") { eval(parse(text=legendText)) }
+      axis(side=1, at=1:3, labels=c("orig.","with LCs","LCs removed")) # make x-axis
       
       if (writeImgFile) { dev.off() }
     }
