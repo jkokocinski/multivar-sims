@@ -1174,7 +1174,7 @@ prewhiten <- function(x, sigLevel) {
   
   x.ns <- x - detectedSines - mean(x)
   
-  pilotSpec <- spec.mtm(ts(x.ns), nw=10, k=19, returnInternals=TRUE, plot=FALSE)
+  pilotSpec <- spec.mtm(ts(x.ns), nw=4, k=7, plot=FALSE)
   pilotSpec.full <- c(pilotSpec$spec, rev(pilotSpec$spec[-1])[-1])
   theACVF <- Re(fft(pilotSpec.full, inverse=TRUE)) / length(pilotSpec.full)
   
