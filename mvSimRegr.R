@@ -43,10 +43,10 @@ errCovMat.p <- 1 * diag(1,2)
 ################## Run the process simulations and regressions #################
 X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
-                 numObsVec=c(16000), NUM_REGR=100,
-                 mtmFixed="NW", W=0.01, timeBandProd=9, numTapers=17,
-                 adaptWt=TRUE, embedSines=FALSE,
-                 linDepY=FALSE, removeLCs=FALSE)
+                 numObsVec=c(4000), NUM_REGR=100,
+                 mtmFixed="NW", W=0.01, timeBandProd=4, numTapers=7,
+                 adaptWt=TRUE, embedSines=TRUE,
+                 linDepY=TRUE, removeLCs=TRUE)
 
 plotCIs(X, stage="",    type="cor", writeImgFile=F)
 plotCIs(X, stage="s",   type="cov", writeImgFile=F)
@@ -58,6 +58,7 @@ boxplot(cbind(X$betasOverN.s.w[[1]]$se.cv.bart,X$betasOverN.s.w[[1]]$se.cv.mtap)
 
 plotCIcompare(X, type="cor", estType="bart")
 plotCIcompare(X, type="cor", estType="mtap")
+plotCIcompare(X, type="cor", estType="both")
 
 ################################## CCVF plots ##################################
 # png("img/ccvf-plot.png", width=640, height=320)
