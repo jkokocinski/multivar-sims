@@ -21,7 +21,7 @@ errCovMat.p <- 1 * diag(1,2)
 
 ######################## parameters for bivariate AR(2) ########################
 # phiMat.r <- matrix(c(0.99,0.1,-0.95,0.3,0.1,0.88,0.1,-0.5), nrow=2, ncol=4, byrow=TRUE)
-# phiMat.p <- matrix(c(0.8,0,-0.7,0,0,0.5,0,-0.3), nrow=2, ncol=4, byrow=TRUE)
+# phiMat.p <- matrix(c(0.8,0.15,-0.7,0.2,0.3,0.5,0.35,-0.3), nrow=2, ncol=4, byrow=TRUE)
 # errCovMat.r <- 1e0 * (diag(c(1,1), 2,2) + matrix(c(0,0.00,0.00,0), 2, 2))
 # errCovMat.p <- 1e0 * diag(1,2)
 
