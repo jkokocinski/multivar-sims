@@ -2,7 +2,7 @@
 
 tryCatch(setwd("~/multivar-sims"),
          error=function(e) {
-           tryCatch( setwd("~/WORK/Q5/masters-thesis/code/multivar-sims") )
+           tryCatch( setwd("~/WORK/Q5/multivar-sims") )
          }
 )
 
@@ -10,6 +10,7 @@ library(mAr)
 library(multitaper)
 library(signal)
 library(plot.matrix)
+library(DescTools)
 # library(parallel); library(foreach); library(doParallel)
 source("helpers_mvSimRegr.R")
 source("seasonalFunctions.R")
@@ -65,7 +66,6 @@ remove(demand, hoep) # clean up
 iesoData$demand <- as.numeric(iesoData$demand)
 iesoData$hoep <- gsub(",", "", iesoData$hoep) # remove thousands separator
 iesoData$hoep <- as.numeric(iesoData$hoep)
-iesoData$log.hoep <- log(iesoData$hoep + abs(min(iesoData$hoep)) + 1)
 
 iesoData <- iesoData[ with(iesoData, { order(year, month, day, hour) }), ]
 row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
@@ -98,31 +98,33 @@ row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
 ######################## compute auto- and cross-spectra #######################
 # png(file="img/3_spec-demand-full.png", width=640, height=320)
 # par(mar=c(5,4,1,1))
-# multitaper::spec.mtm(ts(iesoData$demand), nw=9, k=17, main="")
+# multitaper::spec.mtm(ts(iesoData$demand), nw=4, k=7, main="")
 # dev.off()
 # png(file="img/3_spec-hoep-full.png", width=640, height=320)
 # par(mar=c(5,4,1,1))
-# multitaper::spec.mtm(ts(iesoData$hoep), nw=9, k=17, main="")
+# multitaper::spec.mtm(ts(iesoData$hoep), nw=4, k=7, main="")
 # dev.off()
 
 
 ############################## do the regressions ##############################
 hrNum <- 1:(365*3*24) # hour number vector to be passed to lm as the predictor variable; for removing trend and de-meaning
 
-timeBandProd <- 9
-numTapers <- 17
+timeBandProd <- 4
+numTapers <- 7
 adaptWt <- TRUE # adaptive weigting in mtm cross-spec estimate?
 
 timeSegs <- 2003:2016
 nts <- length(timeSegs)
 covB.mtap.mat <- covB.bart.mat <- matrix(NA, nts, nts)
 corB.mtap.mat <- corB.bart.mat <- matrix(NA, nts, nts)
-betaHat0Vec.new <- betaHat0Vec <- rep(NA, nts)
+betaHat0Vec <- rep(NA, nts)
 betaHatLCs <- matrix(NA, nrow=nts, ncol=3) # 3 columns for persistent LCs (daily, semidaily, octaweekly)
-betaHatLCs.jk <- array(NA, dim=c(dim(betaHatLCs), 7))
+jkLC <- F # jackknife beta-hats for line components?
+betaHatLCs.jk <- array(NA, dim=c(dim(betaHatLCs), numTapers))
 
 for (j1 in 2:(nts-1)) {
-# foreach(j1 = 2:(nts-1)) %dopar% {
+# foreach(j1 = 2:(5)) %:%
+  # foreach(j2 = j1:5) %dopar% {
   for (j2 in j1:(nts-1)) {
     inds1 <- head(which(iesoData$year %in% timeSegs[j1+(-1:1)]), length(hrNum))
     inds2 <- head(which(iesoData$year %in% timeSegs[j2+(-1:1)]), length(hrNum))
@@ -133,61 +135,28 @@ for (j1 in 2:(nts-1)) {
     # X1 <- (weather[which(weather$year %in% timeSegs[j1+(-1:1)]), "temperature"])[hrNum]
     # X2 <- (weather[which(weather$year %in% timeSegs[j2+(-1:1)]), "temperature"])[hrNum]
     
-    # day of week (DOW) factor variables
-    dow1 <- factor(weekdays(iesoData$datetime[inds1], abbreviate=T) %in% c("Sat","Sun"), labels=c("weekday","weekend"))
-    dow2 <- factor(weekdays(iesoData$datetime[inds2], abbreviate=T) %in% c("Sat","Sun"), labels=c("weekday","weekend"))
-    
-    # remove mean and DOW effect
-    Y1 <- (lm(Y1~1+dow1))$residuals
-    Y2 <- (lm(Y2~1+dow2))$residuals
-    X1 <- (lm(X1~1+dow1))$residuals
-    X2 <- (lm(X2~1+dow2))$residuals
-    
     numObs <- length(Y1)
     
-    # linReg1 <- lm(Y1~0+X1)
-    # linReg2 <- lm(Y2~0+X2)
-    
-    mpi.X1 <- MASS::ginv(X1)
-    mpi.X2 <- MASS::ginv(X2)
-    
-    bart.ccv.r <- ccf(x=Y1, y=Y2, type="covariance", lag.max=numObs-1, plot=F)
-    bart.ccv.r.21 <- rev(bart.ccv.r$acf)
-    covB.bart <- bilinToep(mpi.X1, as.vector(bart.ccv.r$acf), mpi.X2)
-    # covB.bart.21 <- bilinToep(mpi.X2, as.vector(bart.ccv.r.21), mpi.X1)
-    
-    # Bartlett ACVFs for responses; for use in calculating corr
-    bart.acv1.r <- acf(x=Y1, type="covariance", lag.max=numObs-1, plot=FALSE)
-    bart.acv2.r <- acf(x=Y2, type="covariance", lag.max=numObs-1, plot=FALSE)
-    bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
-    bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
-    var.b1.bart <- bilinToep(mpi.X1,  bart.acv1.r, mpi.X1)
-    var.b2.bart <- bilinToep(mpi.X2, bart.acv2.r, mpi.X2)
-    corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
-    
-    # update covB Bartlett matrices
-    covB.bart.mat[j1,j2] <- covB.bart
-    covB.bart.mat[j2,j1] <- covB.bart # covB.bart.21
-    corB.bart.mat[j1,j2] <- corB.bart
-    corB.bart.mat[j2,j1] <- corB.bart
-    
-    # store beta-hat
-    if (j1==j2) {
-      betaHat0Vec[j1] <- mpi.X1 %*% Y1
-    }
+    # demean the time series
+    Y1 <- Y1 - mean(Y1)
+    Y2 <- Y2 - mean(Y2)
+    X1 <- X1 - mean(X1)
+    X2 <- X2 - mean(X2)
     
     # prewhitened series
-    X1.pw <- prewhiten(X1, sigLevel=1-1/numObs)
-    Y1.pw <- prewhiten(Y1, sigLevel=1-1/numObs)
-    X2.pw <- prewhiten(X2, sigLevel=1-1/numObs)
-    Y2.pw <- prewhiten(Y2, sigLevel=1-1/numObs)
+    X1.pw <- prewhiten(X1, sigLevel=0.999)
+    Y1.pw <- prewhiten(Y1, sigLevel=0.999)
+    X2.pw <- prewhiten(X2, sigLevel=0.999)
+    Y2.pw <- prewhiten(Y2, sigLevel=0.999)
     
     # find common sinusoidal components
-    cs1Obj <- findCommonSines(x=X1.pw, y=Y1.pw, freqThresh=1/numObs, sigCutoff=1-1/numObs, jackknife=TRUE)
+    cs1Obj <- findCommonSines(x=X1.pw, y=Y1.pw, padFactor=3, freqThresh=timeBandProd/numObs, sigCutoff=0.999,
+                              NW=timeBandProd, K=numTapers, jackknife=jkLC)
     if (j1==j2) {
       cs2Obj <- cs1Obj
     } else {
-      cs2Obj <- findCommonSines(x=X2.pw, y=Y2.pw, freqThresh=1/numObs, sigCutoff=1-1/numObs, jackknife=TRUE)
+      cs2Obj <- findCommonSines(x=X2.pw, y=Y2.pw, padFactor=3, freqThresh=timeBandProd/numObs, sigCutoff=0.999,
+                                NW=timeBandProd, K=numTapers, jackknife=jkLC)
     }
     
     # indices in the params data.frame of the persistent LCs
@@ -208,7 +177,9 @@ for (j1 in 2:(nts-1)) {
     if (j1==j2) {
       for (l in 1:3) {
         betaHatLCs[j1,l] <- cs1Obj$paramsY.com$amp[LCs.Y1.ind[l]] / cs1Obj$paramsX.com$amp[LCs.X1.ind[l]]
-        betaHatLCs.jk[j1,l,] <- cs1Obj$paramsY.com.jk[LCs.Y1.ind[l],2,] / cs1Obj$paramsX.com$amp[LCs.X1.ind[l]]
+        if (jkLC) {
+          betaHatLCs.jk[j1,l,] <- cs1Obj$paramsY.com.jk[LCs.Y1.ind[l],2,] / cs1Obj$paramsX.com$amp[LCs.X1.ind[l]]
+        }
       }
     }
     
@@ -218,10 +189,14 @@ for (j1 in 2:(nts-1)) {
     X2.w <- X2 - 0*cs2Obj$fctVals.incoh[,1] - apply(cs2Obj$fctVals.com.x, 1, sum)
     Y2.w <- Y2 - 0*cs2Obj$fctVals.incoh[,2] - apply(cs2Obj$fctVals.com.y, 1, sum)
     
-    
     # phase-aligned common LCs in pred. series
     cs1.com.x.ph <- cs1Obj$fctVals.com.x.ph
     cs2.com.x.ph <- cs2Obj$fctVals.com.x.ph
+    
+    # transform the residuals of the HOEP series
+    #   (optimal lambda for entire span of series found to be 0.1)
+    Y1.w <- DescTools::BoxCox(Y1.w + abs(min(Y1.w)) + 1, lambda=0.1)
+    Y2.w <- DescTools::BoxCox(Y2.w + abs(min(Y2.w)) + 1, lambda=0.1)
     
     mpi.X1.w <- MASS::ginv(X1.w)
     mpi.X2.w <- MASS::ginv(X2.w)
@@ -230,7 +205,7 @@ for (j1 in 2:(nts-1)) {
     
     # store beta-hat (new)
     if (j1==j2) {
-      betaHat0Vec.new[j1] <- mpi.X1.w %*% Y1.w
+      betaHat0Vec[j1] <- mpi.X1.w %*% Y1.w
     }
     
     # compute spec.mtm objects for both response series components
@@ -324,6 +299,26 @@ for (j1 in 2:(nts-1)) {
     corB.mtap.mat[j1,j2] <- corB.mtap
     corB.mtap.mat[j2,j1] <- corB.mtap
     
+    bart.ccv.r <- ccf(x=Y1.w, y=Y2.w, type="covariance", lag.max=numObs-1, plot=F)
+    covB.bart <- bilinToep(mpi.X1.w, as.vector(bart.ccv.r$acf), mpi.X2.w)
+    
+    # Bartlett ACVFs for responses; for use in calculating corr
+    bart.acv1.r <- acf(x=Y1.w, type="covariance", lag.max=numObs-1, plot=FALSE)
+    bart.acv2.r <- acf(x=Y2.w, type="covariance", lag.max=numObs-1, plot=FALSE)
+    bart.acv1.r <- c(rev(bart.acv1.r$acf), bart.acv1.r$acf[-1])
+    bart.acv2.r <- c(rev(bart.acv2.r$acf), bart.acv2.r$acf[-1])
+    var.b1.bart <- bilinToep(mpi.X1.w,  bart.acv1.r, mpi.X1.w)
+    var.b2.bart <- bilinToep(mpi.X2.w, bart.acv2.r, mpi.X2.w)
+    corB.bart <- covB.bart / sqrt(var.b1.bart * var.b2.bart)
+    
+    # update covB Bartlett matrices
+    covB.bart.mat[j1,j2] <- covB.bart
+    covB.bart.mat[j2,j1] <- covB.bart # covB.bart.21
+    corB.bart.mat[j1,j2] <- corB.bart
+    corB.bart.mat[j2,j1] <- corB.bart
+    
+    # c(j1,j2,covB.bart,corB.bart,covB.mtap,corB.mtap)
+    
     cat(paste0("# ", Sys.time()), "\tdone ", j1, ",", j2, "\n")
   }
 }
@@ -331,29 +326,30 @@ for (j1 in 2:(nts-1)) {
 # load(file="demand-result.RData")
 
 numRows <- dim(covB.bart.mat)[1] - 2L
-betaHat0Vec <- betaHat0Vec.new[which(!is.na(betaHat0Vec.new))]
+betaHat0Vec <- betaHat0Vec[which(!is.na(betaHat0Vec))]
 betaHatLCs <- betaHatLCs[-c(1,dim(betaHatLCs)[1]),]
 betaHatLCs.jk <- betaHatLCs.jk[-c(1,dim(betaHatLCs.jk)[1]),,]
-# BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
-# MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
-# BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
-# MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
+BCov <- matrix(covB.bart.mat[which(!is.na(covB.bart.mat))], numRows, numRows)
+MCov <- matrix(covB.mtap.mat[which(!is.na(covB.mtap.mat))], numRows, numRows)
+BCor <- solve(sqrt(diag(diag(BCov)))) %*% BCov %*% solve(sqrt(diag(diag(BCov))))
+MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
 
 diag(BCor) <- rep(1,numRows)
 diag(MCor) <- rep(1,numRows)
 
-# save(betaHat0Vec, BCov, MCov, BCor, MCor, betaHatLCs, betaHatLCs.jk, file="demand-result.RData")
+save(betaHat0Vec, BCov, MCov, BCor, MCor, betaHatLCs, betaHatLCs.jk, file="demand-result.RData")
 
 # stuff for printing in LaTeX
 xtable::xtableMatharray(x=BCor, digits=2, display=rep("G", dim(BCov)[2]+1))
 xtable::xtableMatharray(x=MCor, digits=2, display=rep("G", dim(BCov)[2]+1))
 
 
+############################### plots of results ###############################
 # plot of the beta-hats over time
 png(file="img/3_beta-hats.png", width=640, height=320)
-par(mar=c(4,4,1,1))
-plot(betaHat0Vec, ylab="beta-hat", xlab="time segment middle year", xaxt="n",
-     xlim=0.5+c(0,numRows))
+par(mar=c(4,5,1,1))
+plot(betaHat0Vec, ylab=expression(hat(beta)^{(j)}),
+     xlab="time segment middle year", xaxt="n", xlim=0.5+c(0,numRows))
 axis(side=1, at=(1:numRows), labels=rev(rev(timeSegs[-1])[-1]))
 dev.off()
 
@@ -377,7 +373,7 @@ plot(MCor, breaks=seq(-1,1,by=0.1), border=T,
      col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
      main="MTM Correlation Estimates")
 
-pdf(file="img/3_BCor-MCor.pdf", width=8, height=6)
+pdf(file="img/3_BCor-MCor-vals.pdf", width=8, height=6)
 par(mar=c(4.5, 4, 2, 4.1))
 plot(BCor * lower.tri(BCor, diag=F) + MCor * upper.tri(MCor, diag=T),
      breaks=seq(-1,1,by=0.1), border=T,
@@ -424,6 +420,9 @@ for (j in 1:length(b.diff.2)) {
 }
 diag(MCor.diff.2) <- 1
 
+detach(package:plot.matrix) # sometimes it's annoying when plotting column vectors
+
+
 
 ############################# confidence intervals #############################
 CIs.mtap.names <- c("beta.hat","uncon.var","condl.var","CI.lower","CI.upper",
@@ -446,12 +445,13 @@ CIs.mtap$new.CI.len <- CIs.mtap$new.CI.upper - CIs.mtap$new.CI.lower
 
 middleyears <- rev(rev(timeSegs[-1])[-1])
 
+# plot just the MTM-based old CIs (no cov info) and new CIs (using MCov)
 png(file="img/3_beta-hats-CIs-mtap.png", width=640, height=320)
-par(mar=c(4,4,1,1))
+par(mar=c(4,5,1,1))
 plot(x=middleyears, y=betaHat0Vec, type="p", pch=17,
      xlim=range(timeSegs)+c(0.5,-0.5),
      ylim=range(c(CIs.mtap$CI.lower,CIs.mtap$CI.upper)),
-     xlab="time segment middle year", ylab="beta-hat")
+     xlab="time segment middle year", ylab=expression(hat(beta)^{(j)}))
 arrows(x0=middleyears, y0=CIs.mtap$CI.lower, x1=middleyears,
        y1=CIs.mtap$CI.upper, length=0.05, angle=90, code=3, lwd=2, col="gray60")
 arrows(x0=middleyears, y0=CIs.mtap$new.CI.lower, x1=middleyears,
@@ -461,7 +461,44 @@ dev.off()
 # print LaTeX table
 xtable::xtable(x=CIs.mtap, digits=4, display=rep("G", dim(CIs.mtap)[2]+1))
 
+
+# create the equivalent of CIs.mtap, but for the Bartlett estimate
+CIs.bart.names <- CIs.mtap.names
+CIs.bart <- as.data.frame(matrix(NA, numRows, length(CIs.bart.names)))
+names(CIs.bart) <- CIs.bart.names
+
+# CIs for a beta-hat, conditional on all the others
+CIs.bart$beta.hat <- betaHat0Vec
+CIs.bart$uncon.var <- diag(BCov)
+for (bh in 1:numRows) {
+  CIs.bart$condl.var[bh] <- BCov[bh,bh] - BCov[bh,-bh] %*% solve(BCov[-bh,-bh]) %*% BCov[-bh,bh]
+}
+CIs.bart$CI.lower <- CIs.bart$beta.hat - qnorm(0.975) * sqrt(CIs.bart$uncon.var)
+CIs.bart$CI.upper <- CIs.bart$beta.hat + qnorm(0.975) * sqrt(CIs.bart$uncon.var)
+CIs.bart$new.CI.lower <- CIs.bart$beta.hat - qnorm(0.975) * sqrt(CIs.bart$condl.var)
+CIs.bart$new.CI.upper <- CIs.bart$beta.hat + qnorm(0.975) * sqrt(CIs.bart$condl.var)
+CIs.bart$CI.len <- CIs.bart$CI.upper - CIs.bart$CI.lower
+CIs.bart$new.CI.len <- CIs.bart$new.CI.upper - CIs.bart$new.CI.lower
+
+# requires creation of the CIs.bart data.frame
+png(file="img/3_beta-hats-CIs-mtap-bart.png", width=640, height=320)
+par(mar=c(4,5,1,1))
+plot(x=middleyears, y=betaHat0Vec, type="p", pch=17,
+     xlim=range(timeSegs)+c(0.5,-0.5),
+     ylim=range(c(CIs.bart$CI.lower,CIs.bart$CI.upper)),
+     xlab="time segment middle year", ylab=expression(hat(beta)^{(j)}))
+arrows(x0=middleyears, y0=CIs.bart$CI.lower, x1=middleyears,
+       y1=CIs.bart$CI.upper, length=0.05, angle=90, code=3, lwd=2, col="gray75")
+arrows(x0=middleyears, y0=CIs.mtap$CI.lower, x1=middleyears,
+       y1=CIs.mtap$CI.upper, length=0.05, angle=90, code=3, lwd=2, col="gray50")
+arrows(x0=middleyears, y0=CIs.mtap$new.CI.lower, x1=middleyears,
+       y1=CIs.mtap$new.CI.upper,length=0.05, angle=90, code=3, lwd=2, col=1)
+legend("topright", lwd=rep(2,3), col=c("gray75","gray50","black"), title="CIs",
+       legend=c("Bartlett, indep.", "MTM, indep.", "MTM, cond'l cov."), cex=0.8)
+dev.off()
+
 # condl.mean <- (MCov[numRows,numRows])^(-1) * MCov[numRows,-numRows] %*% (cbind(betaHat0Vec[-numRows]))
 condl.var.bart <- BCov[numRows,numRows] - BCov[numRows,-numRows] %*% solve(BCov[-numRows,-numRows]) %*% BCov[-numRows,numRows]
+
 
 
