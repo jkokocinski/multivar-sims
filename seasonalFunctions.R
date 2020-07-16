@@ -16,7 +16,7 @@
 # Edited to include the padFactor parameter for zero-padding.
 #
 ################################################################################
-determineSeasonal.old <- function(data, sigCutoff, padFactor=7, deltat=1, predictNum = 0){
+determineSeasonal.old <- function(data, sigCutoff, padFactor=7, deltat=1, predictNum=0){
   require('multitaper')
   
   N <- length(data)
@@ -129,7 +129,7 @@ fitSinusoidSingle <- function(series1, dT, f){
 ################################################################################
 # determineSeasonal, but it jackknifes the line components
 ################################################################################
-determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1,
+determineSeasonal <- function(data, sigCutoff, NW=4, K=7, padFactor=7, deltat=1,
                                  predictNum=0, jackknife=FALSE) {
   require('multitaper')
   
@@ -137,8 +137,8 @@ determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1,
   nFFT <- 2^(floor(log2(N)) + padFactor)
   
   # first, find the line components based on using all the eigencoefs
-  spec <- spec.mtm(data, deltat=deltat, Ftest=TRUE, returnInternals=T, plot=F,
-                   nFFT=nFFT)
+  spec <- spec.mtm(data, nw=NW, k=K, deltat=deltat, Ftest=TRUE,
+                   returnInternals=TRUE, plot=FALSE, nFFT=nFFT)
   cmv <- spec$mtm$cmv
   
   freqsIdx <- findLocalFMax(spec, sigCutoff)
@@ -172,9 +172,8 @@ determineSeasonal <- function(data, sigCutoff, padFactor=7, deltat=1,
   }
   
   if (jackknife) {
-    spec.jk <- spec.mtm(data, deltat=deltat, Ftest=TRUE, returnInternals=T, plot=F,
-                        nFFT=nFFT)
-    K <- spec.jk$mtm$k
+    spec.jk <- spec.mtm(data, deltat=deltat, nw=NW, k=K, Ftest=TRUE,
+                        returnInternals=TRUE, plot=FALSE, nFFT=nFFT)
     sines.jk <- array(NA, dim=c(dim(sines),K))
     phseAmp.jk <- array(NA, dim=c(numFreqs, 3, K)) # array for params
     
