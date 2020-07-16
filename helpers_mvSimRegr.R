@@ -396,9 +396,9 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       # }
     }
       
-    # initialize averages of CCVF estimates
-    bart.ccv.r.avg <- rep(0, 2*numObs-1)
-    mtap.ccv.r.avg <- rep(0, 2*numObs-1)
+    # matrices to store CCVF estimates
+    bart.ccv.r.mat <- matrix(nrow=NUM_REGR, ncol=2*numObs-1)
+    mtap.ccv.r.mat <- matrix(nrow=NUM_REGR, ncol=2*numObs-1)
     
     # initizalize array of response realizations
     respRlzns <- array(data=NA, dim=c(numObs, 2, NUM_REGR))
@@ -434,7 +434,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
           for (p in 1:2) {
             commonSinesObj <- findCommonSines(x=bivAR1.p.s[,p], y=bivAR1.r.s[,p],
               freqThresh=ifelse(mtmFixed=="NW", timeBandProd / numObs, W),
-              sigCutoff=1-1/numObs)
+              sigCutoff=1-1/numObs, NW=timeBandProd, K=numTapers)
             detRespSines <- commonSinesObj$fctVals.com.y
             if(is.null(detRespSines)) { detRespSines <- matrix(0,numObs,2) } # to avoid NULLs
             
@@ -588,16 +588,13 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         betas[j,] <- betas.newRow
         
         # CCVF estimate averages (without dividing by NUM_REGR yet)
-        bart.ccv.r.avg <- bart.ccv.r.avg + bart.ccv.r
-        mtap.ccv.r.avg <- mtap.ccv.r.avg + mtap.ccv.r
+        bart.ccv.r.mat[j,] <- bart.ccv.r
+        mtap.ccv.r.mat[j,] <- mtap.ccv.r
         
         setTxtProgressBar(pb=pb2, value=(tp-1)*NUM_REGR + j)
       } # end for (j in 1:NUM_REGR)
       setTxtProgressBar(pb=pb2, value=0)
     
-      bart.ccv.r.avg <- bart.ccv.r.avg / NUM_REGR
-      mtap.ccv.r.avg <- mtap.ccv.r.avg / NUM_REGR
-      
       betas$se.cv.bart <- (with(betas, {cv.theo-cv.bart}))**2
       betas$se.cv.mtap <- (with(betas, {cv.theo-cv.mtap}))**2
       betas$se.cor.bart <- (with(betas, {cor.theo-cor.bart}))**2
@@ -609,24 +606,30 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
         
         bart.ccv.r.last <- bart.ccv.r
         mtap.ccv.r.last <- mtap.ccv.r
-        bart.ccv.r.ave <- bart.ccv.r.avg
-        mtap.ccv.r.ave <- mtap.ccv.r.avg
+        bart.ccv.r.ave <- apply(bart.ccv.r.mat, 2, mean)
+        mtap.ccv.r.ave <- apply(mtap.ccv.r.mat, 2, mean)
+        B.ccv.r.mat <- bart.ccv.r.mat
+        M.ccv.r.mat <- mtap.ccv.r.mat
         crossSpec <- crossSpecEstY
       } else if (tp==2) {
         betasOverN.s[[n]] <- betas
         
         bart.ccv.r.s.last <- bart.ccv.r
         mtap.ccv.r.s.last <- mtap.ccv.r
-        bart.ccv.r.s.ave <- bart.ccv.r.avg
-        mtap.ccv.r.s.ave <- mtap.ccv.r.avg
+        bart.ccv.r.s.ave <- apply(bart.ccv.r.mat, 2, mean)
+        mtap.ccv.r.s.ave <- apply(mtap.ccv.r.mat, 2, mean)
+        B.ccv.r.s.mat <- bart.ccv.r.mat
+        M.ccv.r.s.mat <- mtap.ccv.r.mat
         crossSpec.s <- crossSpecEstY
       } else if (tp==3) {
         betasOverN.s.w[[n]] <- betas
         
         bart.ccv.r.s.w.last <- bart.ccv.r
         mtap.ccv.r.s.w.last <- mtap.ccv.r
-        bart.ccv.r.s.w.ave <- bart.ccv.r.avg
-        mtap.ccv.r.s.w.ave <- mtap.ccv.r.avg
+        bart.ccv.r.s.w.ave <- apply(bart.ccv.r.mat, 2, mean)
+        mtap.ccv.r.s.w.ave <- apply(mtap.ccv.r.mat, 2, mean)
+        B.ccv.r.s.w.mat <- bart.ccv.r.mat
+        M.ccv.r.s.w.mat <- mtap.ccv.r.mat
         crossSpec.s.w <- crossSpecEstY
       } else {
         stop("impossible tp")
@@ -760,15 +763,16 @@ embedSinusoids <- function(input, freqs, amps, ampScale) {
 #   of frequency. Includes jackknifing of amplitude and phase parameters though
 #   the determineSeasonal function (by default it is turned off here).
 #
-findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff, jackknife=FALSE) {
+findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff,
+                            NW=4, K=7, jackknife=FALSE) {
   stopifnot(length(x)==length(y))
   
   source("seasonalFunctions.R")
   
   suppressWarnings(
     {
-      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff, jackknife=jackknife)
-      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff, jackknife=jackknife)
+      seas.x <- determineSeasonal(data=x, padFactor=padFactor, sigCutoff=sigCutoff, NW=NW, K=K, jackknife=jackknife)
+      seas.y <- determineSeasonal(data=y, padFactor=padFactor, sigCutoff=sigCutoff, NW=NW, K=K, jackknife=jackknife)
     }
   )
   
@@ -840,8 +844,14 @@ findCommonSines <- function(x, y, padFactor=7, freqThresh, sigCutoff, jackknife=
     if (jackknife) {
       paramsX.com.jk <- seas.x$phaseAmplitudeInfo.jk[commonFreqInds[,1],,]
       paramsY.com.jk <- seas.y$phaseAmplitudeInfo.jk[commonFreqInds[,2],,]
-      paramsX.com.jk <- paramsX.com.jk[keepInds.x,,] # removing dupes
-      paramsY.com.jk <- paramsY.com.jk[keepInds.y,,]
+      
+      # below if statements do not execute if params.*.com.jk is a matrix, not an array
+      if (length(dim(paramsX.com.jk))==3) {
+        paramsX.com.jk <- paramsX.com.jk[keepInds.x,,] # removing dupes
+      }
+      if (length(dim(paramsY.com.jk))==3) {
+        paramsY.com.jk <- paramsY.com.jk[keepInds.y,,]
+      }
     } else {
       paramsX.com.jk <- NULL
       paramsY.com.jk <- NULL
@@ -1174,7 +1184,7 @@ prewhiten <- function(x, sigLevel) {
   
   x.ns <- x - detectedSines - mean(x)
   
-  pilotSpec <- spec.mtm(ts(x.ns), nw=4, k=7, plot=FALSE)
+  pilotSpec <- spec.mtm(ts(x.ns), nw=10, k=19, plot=FALSE)
   pilotSpec.full <- c(pilotSpec$spec, rev(pilotSpec$spec[-1])[-1])
   theACVF <- Re(fft(pilotSpec.full, inverse=TRUE)) / length(pilotSpec.full)
   
