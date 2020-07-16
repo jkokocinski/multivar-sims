@@ -494,7 +494,7 @@ arrows(x0=middleyears, y0=CIs.mtap$CI.lower, x1=middleyears,
 arrows(x0=middleyears, y0=CIs.mtap$new.CI.lower, x1=middleyears,
        y1=CIs.mtap$new.CI.upper,length=0.05, angle=90, code=3, lwd=2, col=1)
 legend("topright", lwd=rep(2,3), col=c("gray75","gray50","black"), title="CIs",
-       legend=c("Bartlett, indep.", "MTM, indep.", "MTM, cond'l cov."), cex=0.8)
+       legend=c("Bartlett, indep.", "MTM, indep.", "MTM, cond'l cov."), cex=1.0)
 dev.off()
 
 # condl.mean <- (MCov[numRows,numRows])^(-1) * MCov[numRows,-numRows] %*% (cbind(betaHat0Vec[-numRows]))
