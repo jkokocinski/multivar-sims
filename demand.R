@@ -119,7 +119,7 @@ covB.mtap.mat <- covB.bart.mat <- matrix(NA, nts, nts)
 corB.mtap.mat <- corB.bart.mat <- matrix(NA, nts, nts)
 betaHat0Vec <- rep(NA, nts)
 betaHatLCs <- matrix(NA, nrow=nts, ncol=3) # 3 columns for persistent LCs (daily, semidaily, octaweekly)
-jkLC <- F # jackknife beta-hats for line components?
+jkLC <- T # jackknife beta-hats for line components?
 betaHatLCs.jk <- array(NA, dim=c(dim(betaHatLCs), numTapers))
 
 for (j1 in 2:(nts-1)) {
@@ -337,7 +337,7 @@ MCor <- solve(sqrt(diag(diag(MCov)))) %*% MCov %*% solve(sqrt(diag(diag(MCov))))
 diag(BCor) <- rep(1,numRows)
 diag(MCor) <- rep(1,numRows)
 
-save(betaHat0Vec, BCov, MCov, BCor, MCor, betaHatLCs, betaHatLCs.jk, file="demand-result.RData")
+# save(betaHat0Vec, BCov, MCov, BCor, MCor, betaHatLCs, betaHatLCs.jk, file="demand-result.RData")
 
 # stuff for printing in LaTeX
 xtable::xtableMatharray(x=BCor, digits=2, display=rep("G", dim(BCov)[2]+1))
@@ -500,5 +500,23 @@ dev.off()
 # condl.mean <- (MCov[numRows,numRows])^(-1) * MCov[numRows,-numRows] %*% (cbind(betaHat0Vec[-numRows]))
 condl.var.bart <- BCov[numRows,numRows] - BCov[numRows,-numRows] %*% solve(BCov[-numRows,-numRows]) %*% BCov[-numRows,numRows]
 
+
+
+################################ jackknifed LCs ################################
+daily.jk <- betaHatLCs.jk[,1,]
+daily.jk.means <- apply(X=daily.jk, MARGIN=1, FUN=mean)
+daily.jk.demeaned <- daily.jk - daily.jk.means
+daily.jk.cov <- 6/7 * daily.jk.demeaned %*% t(daily.jk.demeaned)
+daily.jk.cor <- diag(1/sqrt(diag(daily.jk.cov))) %*% daily.jk.cov %*% diag(1/sqrt(diag(daily.jk.cov)))
+diag(daily.jk.cor) <- 1
+
+pdf(file="img/3_dailyLCjk.pdf", width=8, height=6)
+par(mar=c(4.5, 4, 2, 4.1))
+plot(daily.jk.cor,
+     breaks=seq(-1,1,by=0.1), border=T,
+     col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
+     main="Jackknifed MTM Amplitude Ratio Correlation Estimates\nfor daily line component",
+     digits=2, cex.main=0.9)
+dev.off()
 
 
