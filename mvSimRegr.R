@@ -2,7 +2,7 @@
 
 tryCatch(setwd("~/multivar-sims"),
          error=function(e) {
-           tryCatch( setwd("~/WORK/Q5/masters-thesis/code/multivar-sims") )
+           tryCatch( setwd("~/WORK/Q5/multivar-sims") )
          }
 )
 
