@@ -2,7 +2,9 @@
 
 tryCatch(setwd("~/multivar-sims"),
          error=function(e) {
-           tryCatch( setwd("~/WORK/Q5/multivar-sims") )
+           tryCatch(setwd("~/Documents/QU/multivar-sims"),
+                    error=function(er) {
+                      setwd("~/WORK/Q5/multivar-sims")})
          }
 )
 
@@ -515,8 +517,14 @@ par(mar=c(4.5, 4, 2, 4.1))
 plot(daily.jk.cor,
      breaks=seq(-1,1,by=0.1), border=T,
      col=c(hsv(2/3,seq(1,0,by=-0.1),1),hsv(0,seq(0.1,1,by=0.1),1)),
-     main="Jackknifed MTM Amplitude Ratio Correlation Estimates\nfor daily line component",
+     main=paste("Jackknifed MTM Amplitude Ratio Correlation Estimates",
+                "for daily line component", sep="\n"),
      digits=2, cex.main=0.9)
 dev.off()
+
+daily.jk.cor.eig <- eigen(daily.jk.cor)
+daily.jk.cor.pos <- daily.jk.cor.eig$vectors %*% diag(abs(daily.jk.cor.eig$values)) %*% t(daily.jk.cor.eig$vectors)
+norm(daily.jk.cor - daily.jk.cor.pos, type="F")
+
 
 
