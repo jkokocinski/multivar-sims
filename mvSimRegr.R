@@ -2,7 +2,9 @@
 
 tryCatch(setwd("~/multivar-sims"),
          error=function(e) {
-           tryCatch( setwd("~/WORK/Q5/multivar-sims") )
+           tryCatch(setwd("~/Documents/QU/multivar-sims"),
+                    error=function(er) {
+                      setwd("~/WORK/Q5/multivar-sims")})
          }
 )
 
@@ -52,9 +54,9 @@ plotCIs(X, stage="",    type="cor", writeImgFile=F)
 plotCIs(X, stage="s",   type="cov", writeImgFile=F)
 plotCIs(X, stage="s.w", type="cov", writeImgFile=F)
 
-boxplot(cbind(X$betasOverN[[1]]$se.cv.bart,X$betasOverN[[1]]$se.cv.mtap), log="y")
-boxplot(cbind(X$betasOverN.s[[1]]$se.cv.bart,X$betasOverN.s[[1]]$se.cv.mtap), log="y")
-boxplot(cbind(X$betasOverN.s.w[[1]]$se.cv.bart,X$betasOverN.s.w[[1]]$se.cv.mtap), log="y")
+boxplot(cbind(X$betasOverN[[1]]$se.cor.bart,X$betasOverN[[1]]$se.cor.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"), ylab="Sq. Err. of corr estimator")
+boxplot(cbind(X$betasOverN.s[[1]]$se.cv.bart,X$betasOverN.s[[1]]$se.cv.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"))
+boxplot(cbind(X$betasOverN.s.w[[1]]$se.cv.bart,X$betasOverN.s.w[[1]]$se.cv.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"))
 
 plotCIcompare(X, type="cor", estType="bart")
 plotCIcompare(X, type="cor", estType="mtap")
