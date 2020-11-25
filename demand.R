@@ -13,6 +13,7 @@ library(multitaper)
 library(signal)
 library(plot.matrix)
 library(DescTools)
+library(tsinterp)
 # library(parallel); library(foreach); library(doParallel)
 source("helpers_mvSimRegr.R")
 source("seasonalFunctions.R")
@@ -34,8 +35,8 @@ importData <- function(prefix, seqInds, suffix="", filext, skip=0) {
   return(theData)
 }
 
-demand <- importData("data/demand/PUB_Demand_", 2003:2020, "", ".csv", skip=3)
-hoep <- importData("data/hoep/PUB_PriceHOEPPredispOR_", 2003:2020, "", ".csv", skip=3)
+demand <- importData("data/demand/PUB_Demand_", 2003:2016, "", ".csv", skip=3)
+hoep <- importData("data/hoep/PUB_PriceHOEPPredispOR_", 2003:2016, "", ".csv", skip=3)
 
 # temperat <- data.frame()
 # for (yr in 2003:2012) {
@@ -88,7 +89,7 @@ row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
 
 
 ################################# plot the data ################################
-# png(file="img/demand-hoep_plots.png", width=640, height=720)
+# png(file="img/3_demand-hoep_plots.png", width=640, height=720)
 # par(mfrow=c(2,1))
 # par(mar=c(4,4,1,1))
 # plot(x=iesoData$datetime, y=iesoData$demand, type="l",
@@ -106,6 +107,26 @@ row.names(iesoData) <- as.character(seq(1,dim(iesoData)[1])) # correct row.names
 # par(mar=c(5,4,1,1))
 # multitaper::spec.mtm(ts(iesoData$hoep), nw=4, k=7, main="")
 # dev.off()
+
+# interpolate the blackout of 2003
+ieso03 <- iesoData[which(iesoData$year==2003),] # just data for 2003
+bo.ind.L <- which(ieso03$month==8 & ieso03$day==14 & ieso03$hour==16)
+bo.ind.U <- which(ieso03$month==8 & ieso03$day==15 & ieso03$hour==23)
+dem03 <- ieso03$demand # demand for 2003
+dem03[seq(bo.ind.L,bo.ind.U)] <- NA
+dem03.interp <- tsinterp::interpolate(z=dem03, gap=seq(bo.ind.L,bo.ind.U), progress=T)
+
+par(mar=c(4,4,1,1))
+plot(x=ieso03$datetime[(bo.ind.L-72):(bo.ind.U+72)],
+     y=dem03[(bo.ind.L-72):(bo.ind.U+72)], type="l", xlab="Date", ylab="Demand (kW)")
+lines(x=ieso03$datetime[(bo.ind.L):(bo.ind.U)],
+      y=dem03.interp[[1]][(bo.ind.L):(bo.ind.U)], col="blue", lty=2)
+dev.off()
+
+ieso03.interp <- ieso03
+ieso03.interp$demand <- dem03.interp[[1]]
+iesoData[which(iesoData$year==2003),] <- ieso03.interp
+
 
 
 ############################## do the regressions ##############################
