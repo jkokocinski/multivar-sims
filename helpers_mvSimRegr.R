@@ -105,6 +105,14 @@ toepLeftMult2 <- function(toepVec,rightVec) {
 
 ################################### bilinToep ##################################
 #
+# bilinToep : Computes the bilinear form of a Toeplitz matrix.
+#
+#     * `toepVec` should be as in the `toepLeftMult` function, having length
+#        2*N-1.
+#     * `leftVec` should be a numeric vector the pre-multiplies the Toeplitz
+#        matrix.
+#     * `rightVec` should be a numeric vector that post-multiplies the Toeplitz
+#        matrix.
 #
 bilinToep <- function(leftVec,toepVec,rightVec) {
   if (class(leftVec)!="numeric") {
@@ -330,7 +338,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     maxlag <- numObs-1
     if (linDepY) {
       phi <- 0.95 # AR coef for Y_1
-      a <- 1 #2.5 # scale on Y_2
+      a <- 2.5 # scale on Y_2
       varZ.Y1 <- 0.2
       addedNoiseVar.Y2 <- 0.05
       theo.acv1.r <- phi^(abs(seq(-maxlag, maxlag))) * varZ.Y1 / (1-phi^2)
@@ -374,7 +382,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     if (embedSines) {
       bivAR1.p.s <- embedSinusoids(input=bivAR1.p, freqs=freqsToEmbed,
-                                   amps=sqrt(diag(errCovMat.p)), ampScale=8)
+                                   amps=sqrt(diag(errCovMat.p)), ampScale=3)
       # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(12,12)**(-1),
       #                              amps=sqrt(diag(errCovMat.r)), ampScale=0.7)
       # bivAR1.p.s <- embedSinusoids(input=bivAR1.p.s, freqs=c(21,21)**(-1),
@@ -422,7 +430,7 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
       
       if (embedSines) {
         bivAR1.r.s <- embedSinusoids(input=bivAR1.r, freqs=freqsToEmbed,
-                                     amps=sqrt(diag(errCovMat.r)), ampScale=10)
+                                     amps=sqrt(diag(errCovMat.r)), ampScale=2)
         # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(12,12)**(-1),
         #                              amps=diag(errCovMat.r), ampScale=0.25)
         # bivAR1.r.s <- embedSinusoids(input=bivAR1.r.s, freqs=c(21,21)**(-1),
@@ -658,6 +666,10 @@ ar.regr.cov <- function(phiMat.p, phiMat.r, errCovMat.p, errCovMat.r,
     
     for (k in seq(1,length(betasOverN))) {
       dfObj <- dfObjList[[k]]
+      
+      # NOTE: The following three blocks, which do multiple assignments in a single
+      #   line do not work on some older versions of R. Works on 3.6.0. Should fix
+      #   this.
       
       # estimated MSEs of the cov & cor estimates
       result[k,c("mse.cv.bart","mse.cv.mtap")] <-
@@ -960,7 +972,7 @@ plotCIs <- function(resultList, type="cov", stage="", writeImgFile=FALSE) {
         pdf(paste0("img/MSEbetahats_", currTime, ".pdf"), width=7, height=4)
       }
       plotText <- "plot(x=result$N-5, y=result$mse.cv.bart, xlab=\"Realization Size\",
-           ylab=\"MSE of cov estimator\",
+           ylab=\"SE of cov estimator\",
            log=\"y\", ylim=MSE.plotLims*10**c(-0.5,0.5), col=\"red\", pch=16)
       points(x=result$N+5, y=result$mse.cv.mtap, col=\"blue\", pch=17)
       arrows(x0=result$N-5, y0=result$qSE.L.cov.bart, x1=result$N-5, y1=result$qSE.U.cov.bart,
