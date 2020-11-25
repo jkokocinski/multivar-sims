@@ -47,16 +47,16 @@ X <- ar.regr.cov(phiMat.p=phiMat.p, phiMat.r=phiMat.r,
                  errCovMat.r=errCovMat.r, errCovMat.p=errCovMat.p,
                  numObsVec=c(4000), NUM_REGR=100,
                  mtmFixed="NW", W=0.01, timeBandProd=4, numTapers=7,
-                 adaptWt=TRUE, embedSines=TRUE,
-                 linDepY=TRUE, removeLCs=TRUE)
+                 adaptWt=TRUE, embedSines=FALSE,
+                 linDepY=FALSE, removeLCs=FALSE)
 
 plotCIs(X, stage="",    type="cor", writeImgFile=F)
 plotCIs(X, stage="s",   type="cov", writeImgFile=F)
 plotCIs(X, stage="s.w", type="cov", writeImgFile=F)
 
 boxplot(cbind(X$betasOverN[[1]]$se.cor.bart,X$betasOverN[[1]]$se.cor.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"), ylab="Sq. Err. of corr estimator")
-boxplot(cbind(X$betasOverN.s[[1]]$se.cv.bart,X$betasOverN.s[[1]]$se.cv.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"))
-boxplot(cbind(X$betasOverN.s.w[[1]]$se.cv.bart,X$betasOverN.s.w[[1]]$se.cv.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"))
+boxplot(cbind(X$betasOverN.s[[1]]$se.cor.bart,X$betasOverN.s[[1]]$se.cor.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"), ylab="Sq. Err. of corr estimator")
+boxplot(cbind(X$betasOverN.s.w[[1]]$se.cv.bart,X$betasOverN.s.w[[1]]$se.cv.mtap), log="y", border=c("red","blue"), names=c("Bartlett","MTM"), ylab="Sq. Err. of corr estimator")
 
 plotCIcompare(X, type="cor", estType="bart")
 plotCIcompare(X, type="cor", estType="mtap")
@@ -65,7 +65,7 @@ plotCIcompare(X, type="cor", estType="both")
 ################################## CCVF plots ##################################
 # png("img/ccvf-plot.png", width=640, height=320)
 # pdf("img/ccvf-plot.pdf", width=6.4, height=3.6)
-plotCCVF(resultList=X, plotLags=seq(-40,40), stage="", ave=F)
+plotCCVF(resultList=X, plotLags=seq(40,800), stage="", ave=F)
 plotCCVF(resultList=X, plotLags=seq(-40,40), stage="s", ave=F)
 plotCCVF(resultList=X, plotLags=seq(-40,40), stage="s.w", ave=F)
 # plotLags <- seq(-20,20)
